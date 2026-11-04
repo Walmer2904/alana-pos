@@ -454,8 +454,8 @@ function htmlTicket(v) {
     <tr><td>&nbsp;&nbsp;${it.cantidad} x ${soles(it.precio)}</td><td class="num">${soles(it.subtotal)}</td></tr>`).join("");
   return `
     <div class="ticket">
-      <h1>ALANA</h1>
-      <p class="centro">Comida rápida</p>
+      <h1>Alana</h1>
+      <p class="centro">Comida rápida · Cel. 930 822 405</p>
       <hr>
       <table>
         <tr><td>Fecha:</td><td class="num">${fechaHora(v.fecha)}</td></tr>

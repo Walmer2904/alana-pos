@@ -71,7 +71,7 @@ function mostrarErrorFatal(mensaje) {
   document.body.classList.remove("cargando");
   document.body.innerHTML = `
     <main class="error-fatal">
-      <h1 class="marca">ALANA</h1>
+      <h1 class="marca">Alana</h1>
       <p>${escaparHTML(mensaje)}</p>
       <button class="btn btn-primario" id="btnSalirError">Cerrar sesión</button>
     </main>`;
@@ -107,7 +107,9 @@ function dibujarBarra(usuario) {
     .join("");
 
   barra.innerHTML = `
-    <a class="barra-marca" href="ventas.html" aria-label="ALANA - ir a Ventas">ALANA</a>
+    <a class="barra-marca" href="ventas.html" aria-label="Alana - ir a Ventas">
+      <img src="img/logo.png" alt=""><span>Alana</span>
+    </a>
     <button class="barra-toggle" id="btnMenu" aria-expanded="false" aria-controls="barraMenu">Menú</button>
     <div class="barra-menu" id="barraMenu">
       <nav aria-label="Menú principal">${enlaces}</nav>

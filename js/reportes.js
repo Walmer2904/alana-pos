@@ -218,8 +218,10 @@ function dibujarGrafico() {
       datasets: [{
         label: "Total vendido",
         data: datos,
-        backgroundColor: "#F2B01E",
-        hoverBackgroundColor: "#C8321E",
+        backgroundColor: "#FFD21F",
+        borderColor: "#141414",
+        borderWidth: 2,
+        hoverBackgroundColor: "#F0288C",
         borderRadius: 6,
         maxBarThickness: 48
       }]
@@ -240,7 +242,7 @@ function dibujarGrafico() {
         y: {
           beginAtZero: true,
           ticks: { callback: (v) => "S/ " + v },
-          grid: { color: "#EFEBE7" }
+          grid: { color: "#EFECE8" }
         },
         x: { grid: { display: false } }
       }

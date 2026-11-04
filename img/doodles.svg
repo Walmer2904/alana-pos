@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="260" viewBox="0 0 260 260">
+  <!-- Patrón de dibujos a mano alzada (estilo pizarra del local ALANA).
+       Trazos blancos semitransparentes para fondos negros. -->
+  <g fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Hamburguesa -->
+    <path d="M22 58 Q22 28 62 28 Q102 28 102 58 Z"/>
+    <path d="M38 40 l3 2 M58 36 l3 1 M78 41 l3 2"/>
+    <path d="M18 66 Q30 60 42 66 T66 66 T90 66 T106 66"/>
+    <rect x="20" y="72" width="84" height="10" rx="5"/>
+    <path d="M22 90 L102 90 Q102 104 62 104 Q22 104 22 90 Z"/>
+
+    <!-- Papas fritas -->
+    <path d="M160 58 L150 30 M172 56 L168 22 M184 56 L188 24 M196 58 L204 30"/>
+    <path d="M146 58 L156 112 L204 112 L214 58 Z"/>
+    <path d="M160 78 Q180 88 200 78"/>
+
+    <!-- Vaso con sorbete -->
+    <path d="M34 158 L44 234 L84 234 L94 158 Z"/>
+    <path d="M28 158 L100 158 M32 150 L96 150 L100 158"/>
+    <path d="M70 150 L80 124 L96 120"/>
+    <path d="M48 186 L80 186"/>
+
+    <!-- Muslo de pollo -->
+    <path d="M150 196 Q140 160 172 150 Q204 144 210 174 Q214 198 186 204 Q170 208 162 216"/>
+    <path d="M162 216 l-8 10 M162 216 l4 12 M154 226 a5 5 0 1 0 -6 -6 M166 228 a5 5 0 1 0 6 4"/>
+
+    <!-- Destellos y garabatos -->
+    <path d="M128 18 l0 14 M121 25 l14 0"/>
+    <path d="M232 128 l0 12 M226 134 l12 0"/>
+    <path d="M120 140 q8 -10 16 0 t16 0 t16 0"/>
+    <path d="M226 20 l10 -8 M230 32 l14 -2 M224 8 l4 -8"/>
+    <circle cx="122" cy="210" r="4"/>
+    <circle cx="134" cy="222" r="2.5"/>
+    <circle cx="240" cy="230" r="5"/>
+    <path d="M10 128 l8 -8 l8 8 l8 -8"/>
+  </g>
+</svg>

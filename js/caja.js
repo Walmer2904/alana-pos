@@ -281,7 +281,7 @@ function dibujarHistorial() {
         <td class="num">${soles(c.totalVentas)}</td>
         <td class="num">${soles(c.efectivoEsperado)}</td>
         <td class="num">${soles(c.efectivoContado)}</td>
-        <td class="num"><span class="etiqueta-estado ${info.clase === "cero" ? "verde" : info.clase === "sobrante" ? "mostaza" : "rojo"}">${info.corto}</span></td>
+        <td class="num"><span class="etiqueta-estado ${info.clase === "cero" ? "verde" : info.clase === "sobrante" ? "amarillo" : "rojo"}">${info.corto}</span></td>
         <td><button class="btn btn-claro btn-chico" data-imprimir="${c.id}">Imprimir</button></td>
       </tr>`;
   }).join("");
@@ -302,7 +302,7 @@ function htmlReporteCierre(c) {
   const info = describirDiferencia(Number(c.diferencia) || 0);
   return `
     <div class="ticket">
-      <h1>ALANA</h1>
+      <h1>Alana</h1>
       <p class="centro"><strong>REPORTE DE CIERRE DE CAJA</strong></p>
       <hr>
       <table>
