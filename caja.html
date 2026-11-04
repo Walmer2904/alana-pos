@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALANA POS · Caja</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body class="cargando">
+  <div class="pantalla-carga">ALANA</div>
+  <header class="barra" id="barra"></header>
+
+  <main class="contenido">
+    <div class="encabezado-pagina">
+      <h1>Caja</h1>
+      <div class="caja-estado" id="estadoCaja"></div>
+    </div>
+
+    <!-- Sin caja abierta: formulario de apertura -->
+    <section class="tarjeta oculto" id="zonaApertura" aria-labelledby="tituloApertura">
+      <h2 id="tituloApertura">Abrir caja</h2>
+      <p class="texto-gris">No hay una caja abierta. Para empezar a vender, ingresa el efectivo con el que inicia el turno.</p>
+      <form id="formApertura" novalidate style="max-width:380px">
+        <div class="campo">
+          <label for="montoInicial">Monto inicial en efectivo (S/)</label>
+          <input type="number" id="montoInicial" class="monto-grande" min="0" step="0.10" inputmode="decimal" value="0">
+        </div>
+        <button type="submit" class="btn btn-primario btn-grande" id="btnAbrir">Abrir caja</button>
+      </form>
+    </section>
+
+    <!-- Con caja abierta: resumen en tiempo real y cierre -->
+    <div class="oculto" id="zonaTurno">
+      <section class="tarjeta" aria-labelledby="tituloResumen">
+        <h2 id="tituloResumen">Resumen del turno</h2>
+        <p class="texto-gris" id="infoApertura"></p>
+        <div class="indicadores">
+          <div class="indicador destacado"><div class="rotulo">Total vendido</div><div class="valor" id="kpiTotal">S/ 0.00</div></div>
+          <div class="indicador"><div class="rotulo">N.º de ventas</div><div class="valor" id="kpiNum">0</div></div>
+          <div class="indicador"><div class="rotulo">Monto inicial</div><div class="valor" id="kpiInicial">S/ 0.00</div></div>
+          <div class="indicador"><div class="rotulo">Efectivo esperado</div><div class="valor" id="kpiEsperado">S/ 0.00</div></div>
+        </div>
+        <h3>Total por método de pago</h3>
+        <div class="metodos-resumen" id="resumenMetodos"></div>
+      </section>
+
+      <section class="tarjeta" aria-labelledby="tituloCierre">
+        <h2 id="tituloCierre">Cerrar caja</h2>
+        <form id="formCierre" novalidate class="cuadricula-2">
+          <div>
+            <div class="campo">
+              <label for="efectivoContado">Efectivo contado (S/)</label>
+              <input type="number" id="efectivoContado" class="monto-grande" min="0" step="0.10" inputmode="decimal" placeholder="0.00">
+              <small>Cuenta todo el efectivo de la caja, incluido el monto inicial.</small>
+            </div>
+            <div class="campo">
+              <label for="observacion">Observación (opcional)</label>
+              <textarea id="observacion" maxlength="300" placeholder="Ej.: se pagó un delivery con efectivo de caja"></textarea>
+            </div>
+          </div>
+          <div>
+            <span class="etiqueta">Diferencia</span>
+            <div class="diferencia" id="diferencia" aria-live="polite">—</div>
+            <p class="texto-gris" id="textoDiferencia"></p>
+            <button type="submit" class="btn btn-primario btn-grande" id="btnCerrar">Cerrar caja</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <!-- Historial -->
+    <section class="tarjeta" aria-labelledby="tituloHistorial">
+      <h2 id="tituloHistorial">Historial de cierres</h2>
+      <div class="tabla-contenedor">
+        <table class="tabla">
+          <thead>
+            <tr>
+              <th>Apertura</th>
+              <th>Cierre</th>
+              <th>Cerró</th>
+              <th class="num">Ventas</th>
+              <th class="num">Total</th>
+              <th class="num">Esperado</th>
+              <th class="num">Contado</th>
+              <th class="num">Diferencia</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tablaHistorial">
+            <tr><td colspan="9" class="vacio">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal: caja cerrada -->
+  <dialog class="modal" id="modalCerrada" aria-labelledby="tituloCerrada">
+    <div class="modal-cabecera"><h2 id="tituloCerrada">Caja cerrada</h2></div>
+    <div class="modal-cuerpo">
+      <dl class="resumen-cierre" id="resumenCerrada"></dl>
+      <div class="modal-acciones">
+        <button class="btn btn-claro" id="btnCerrarModal">Listo</button>
+        <button class="btn btn-mostaza" id="btnImprimirCierre">Imprimir reporte</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/caja.js"></script>
+</body>
+</html>

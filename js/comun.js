@@ -6,7 +6,10 @@
 // - Utilidades pequeñas: escapar HTML, avisos (toast), modales.
 // ============================================================
 
-import { auth, db, onAuthStateChanged, signOut, doc, getDoc } from "./firebase.js";
+import {
+  auth, db, onAuthStateChanged, signOut, doc, getDoc,
+  collection, onSnapshot, query, where
+} from "./firebase.js";
 
 export const ZONA = "America/Lima";
 // Perú no usa horario de verano: siempre es UTC-5.
@@ -312,3 +315,64 @@ export const NOMBRES_METODO = {
   tarjeta: "Tarjeta"
 };
 export const METODOS = ["efectivo", "yape", "plin", "tarjeta"];
+
+// ------------------------------------------------------------
+// Caja abierta (compartida entre todas las PCs)
+// ------------------------------------------------------------
+// El documento "config/cajaActual" guarda { cierreId } de la caja
+// abierta (o null). Se modifica SOLO dentro de transacciones al abrir
+// o cerrar caja, lo que garantiza que haya una sola caja abierta.
+export const refCajaActual = () => doc(db, "config", "cajaActual");
+
+/**
+ * Escucha en tiempo real la caja abierta.
+ * @param {(cierre: object|null) => void} callback  Recibe {id, ...datos} o null si no hay caja abierta.
+ */
+export function escucharCaja(callback) {
+  let dejarDeEscucharCierre = null;
+  let idActual = undefined;
+
+  onSnapshot(refCajaActual(), (snap) => {
+    const cierreId = snap.exists() ? snap.data().cierreId || null : null;
+    if (cierreId === idActual) return;
+    idActual = cierreId;
+
+    if (dejarDeEscucharCierre) { dejarDeEscucharCierre(); dejarDeEscucharCierre = null; }
+    if (!cierreId) { callback(null); return; }
+
+    dejarDeEscucharCierre = onSnapshot(doc(db, "cierres", cierreId), (s) => {
+      const datos = s.exists() ? { id: s.id, ...s.data() } : null;
+      callback(datos && datos.estado === "abierta" ? datos : null);
+    }, (error) => { console.error(error); aviso(mensajeError(error), "error"); });
+  }, (error) => { console.error(error); aviso(mensajeError(error), "error"); });
+}
+
+/**
+ * Escucha en tiempo real las ventas de una caja (cierre), de la más
+ * reciente a la más antigua. Consulta por un solo campo: no requiere índice.
+ * Devuelve la función para dejar de escuchar.
+ */
+export function escucharVentasDeCaja(cierreId, callback) {
+  const q = query(collection(db, "ventas"), where("cierreId", "==", cierreId));
+  return onSnapshot(q, (snap) => {
+    // "estimate": mientras el servidor confirma la hora, usa la hora local
+    const ventas = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+    ventas.sort((a, b) => (aFecha(b.fecha)?.getTime() || 0) - (aFecha(a.fecha)?.getTime() || 0));
+    callback(ventas);
+  }, (error) => { console.error(error); aviso(mensajeError(error), "error"); });
+}
+
+/** Suma las ventas NO anuladas: total, cantidad y total por método. */
+export function calcularTotales(ventas) {
+  const porMetodo = { efectivo: 0, yape: 0, plin: 0, tarjeta: 0 };
+  let total = 0;
+  let numVentas = 0;
+  for (const v of ventas) {
+    if (v.anulada) continue;
+    total += Number(v.total) || 0;
+    numVentas++;
+    if (v.metodoPago in porMetodo) porMetodo[v.metodoPago] += Number(v.total) || 0;
+  }
+  for (const m of METODOS) porMetodo[m] = redondear(porMetodo[m]);
+  return { total: redondear(total), numVentas, porMetodo };
+}
