@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALANA POS · Ventas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body class="cargando">
+  <div class="pantalla-carga">ALANA</div>
+  <header class="barra" id="barra"></header>
+
+  <main class="contenido">
+    <!-- Aviso cuando no hay caja abierta -->
+    <div class="alerta alerta-aviso oculto" id="avisoSinCaja" role="alert">
+      <span>No hay una caja abierta. Abre la caja para poder registrar ventas.</span>
+      <a class="btn btn-primario" href="caja.html">Ir a Caja</a>
+    </div>
+
+    <div class="pos">
+      <!-- Catálogo -->
+      <section aria-labelledby="tituloCatalogo">
+        <h1 id="tituloCatalogo" class="sr-only">Productos</h1>
+        <div class="filtros" id="filtros" role="group" aria-label="Filtrar por categoría"></div>
+        <div class="buscador">
+          <label for="buscar" class="sr-only">Buscar producto</label>
+          <input type="search" id="buscar" placeholder="Buscar producto…" autocomplete="off">
+        </div>
+        <div class="catalogo" id="catalogo">
+          <p class="vacio">Cargando productos…</p>
+        </div>
+      </section>
+
+      <!-- Pedido actual -->
+      <aside class="tarjeta pedido" aria-labelledby="tituloPedido">
+        <div class="pedido-cabecera">
+          <h2 id="tituloPedido">Pedido</h2>
+          <button class="btn btn-claro btn-chico" id="btnVaciar" disabled>Vaciar</button>
+        </div>
+        <ul class="pedido-items" id="pedidoItems" aria-live="polite"></ul>
+        <div class="pedido-pie">
+          <div class="total-fila">
+            <span class="rotulo">TOTAL</span>
+            <span class="total-grande" id="totalPedido">S/ 0.00</span>
+          </div>
+          <button class="btn btn-primario btn-grande" id="btnCobrar" disabled>Cobrar</button>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Ventas del turno -->
+    <section class="tarjeta" style="margin-top:1.25rem" aria-labelledby="tituloTurno">
+      <h2 id="tituloTurno">Últimas ventas del turno</h2>
+      <div class="tabla-contenedor">
+        <table class="tabla">
+          <thead>
+            <tr>
+              <th>Hora</th>
+              <th>Detalle</th>
+              <th>Método</th>
+              <th class="num">Total</th>
+              <th>Atendió</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tablaTurno">
+            <tr><td colspan="6" class="vacio">Sin ventas todavía.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal: cobrar -->
+  <dialog class="modal" id="modalCobro" aria-labelledby="tituloCobro">
+    <div class="modal-cabecera">
+      <h2 id="tituloCobro">Cobrar</h2>
+      <button class="btn btn-claro btn-icono" id="btnCerrarCobro" aria-label="Cerrar">✕</button>
+    </div>
+    <form class="modal-cuerpo" id="formCobro" novalidate>
+      <div class="cobro-total">
+        <span class="etiqueta">Total a cobrar</span>
+        <span class="total-grande" id="cobroTotal">S/ 0.00</span>
+      </div>
+
+      <span class="etiqueta" id="etiquetaMetodo">Método de pago</span>
+      <div class="metodos" role="group" aria-labelledby="etiquetaMetodo" id="metodos">
+        <button type="button" class="metodo-btn" data-metodo="efectivo" aria-pressed="true">Efectivo</button>
+        <button type="button" class="metodo-btn" data-metodo="yape" aria-pressed="false">Yape</button>
+        <button type="button" class="metodo-btn" data-metodo="plin" aria-pressed="false">Plin</button>
+        <button type="button" class="metodo-btn" data-metodo="tarjeta" aria-pressed="false">Tarjeta</button>
+      </div>
+
+      <div id="zonaEfectivo">
+        <div class="campo" style="margin-bottom:0">
+          <label for="montoRecibido">Monto recibido (S/)</label>
+          <input type="number" id="montoRecibido" class="monto-grande" min="0" step="0.10" inputmode="decimal">
+        </div>
+        <div class="montos-rapidos" id="montosRapidos"></div>
+        <div class="vuelto-caja" id="vueltoCaja" aria-live="polite">
+          <span id="vueltoRotulo">Vuelto</span><strong id="vueltoMonto">S/ 0.00</strong>
+        </div>
+      </div>
+
+      <div id="errorCobro" class="mensaje-error oculto" role="alert" style="margin-top:1rem"></div>
+
+      <div class="modal-acciones">
+        <button type="submit" class="btn btn-primario btn-grande" id="btnConfirmarCobro">Confirmar venta</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: venta registrada -->
+  <dialog class="modal modal-chico" id="modalVentaOk" aria-labelledby="tituloVentaOk">
+    <div class="modal-cabecera"><h2 id="tituloVentaOk">Venta registrada</h2></div>
+    <div class="modal-cuerpo">
+      <dl class="resumen-cierre" id="resumenVentaOk"></dl>
+      <div class="modal-acciones">
+        <button class="btn btn-mostaza" id="btnImprimirTicket">Imprimir ticket</button>
+        <button class="btn btn-primario" id="btnNuevaVenta">Nueva venta</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/ventas.js"></script>
+</body>
+</html>
