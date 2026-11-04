@@ -53,10 +53,22 @@
     <section class="tarjeta" aria-labelledby="tituloResumen">
       <h2 id="tituloResumen">Resumen</h2>
       <div class="indicadores">
-        <div class="indicador destacado"><div class="rotulo">Total vendido</div><div class="valor" id="kpiTotal">S/ 0.00</div></div>
+        <div class="indicador destacado"><div class="rotulo">Total vendido (cobrado)</div><div class="valor" id="kpiTotal">S/ 0.00</div></div>
         <div class="indicador"><div class="rotulo">N.º de ventas</div><div class="valor" id="kpiNum">0</div></div>
         <div class="indicador"><div class="rotulo">Ticket promedio</div><div class="valor" id="kpiPromedio">S/ 0.00</div></div>
         <div class="indicador"><div class="rotulo">Anuladas</div><div class="valor" id="kpiAnuladas">0</div></div>
+      </div>
+      <div class="indicadores">
+        <div class="indicador">
+          <div class="rotulo">Cobros de créditos en el periodo</div>
+          <div class="valor" id="kpiCobros">S/ 0.00</div>
+          <small id="kpiCobrosDetalle">Ya incluidos en el total vendido</small>
+        </div>
+        <div class="indicador informativo">
+          <div class="rotulo">Total pendiente por cobrar (hoy)</div>
+          <div class="valor" id="kpiPendiente">S/ 0.00</div>
+          <small id="kpiPendienteDetalle">Informativo: no suma al total</small>
+        </div>
       </div>
       <h3>Total por método de pago</h3>
       <div class="metodos-resumen" id="resumenMetodos"></div>
