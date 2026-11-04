@@ -94,6 +94,22 @@
         <button type="button" class="metodo-btn" data-metodo="yape" aria-pressed="false">Yape</button>
         <button type="button" class="metodo-btn" data-metodo="plin" aria-pressed="false">Plin</button>
         <button type="button" class="metodo-btn" data-metodo="tarjeta" aria-pressed="false">Tarjeta</button>
+        <button type="button" class="metodo-btn metodo-credito" data-metodo="credito" aria-pressed="false">Crédito</button>
+      </div>
+
+      <!-- Datos del cliente: solo para ventas al crédito -->
+      <div id="zonaCredito" class="oculto">
+        <div class="cuadricula-2" style="gap:.75rem">
+          <div class="campo">
+            <label for="dniCliente">DNI del cliente</label>
+            <input type="text" id="dniCliente" inputmode="numeric" maxlength="8" pattern="\d{8}" autocomplete="off" placeholder="8 dígitos">
+          </div>
+          <div class="campo">
+            <label for="nombreCliente">Nombre completo</label>
+            <input type="text" id="nombreCliente" maxlength="80" autocomplete="off">
+          </div>
+        </div>
+        <div id="infoCliente" class="info-cliente oculto" aria-live="polite"></div>
       </div>
 
       <div id="zonaEfectivo">

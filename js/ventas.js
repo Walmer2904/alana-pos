@@ -3,15 +3,21 @@
 // ------------------------------------------------------------
 // Flujo: elegir productos -> armar pedido -> cobrar -> guardar venta
 // en Firestore asociada a la caja abierta -> (opcional) imprimir ticket.
+//
+// Venta al crédito: además de la venta se crean, en la MISMA
+// transacción, un documento en "creditos" y el cliente en "clientes"
+// (ID = DNI). El crédito no suma en caja ni reportes hasta que se paga.
 // ============================================================
 
 import {
-  db, collection, doc, updateDoc, onSnapshot, serverTimestamp, runTransaction
+  db, collection, doc, getDoc, getDocs, query, where, updateDoc, onSnapshot,
+  serverTimestamp, runTransaction
 } from "./firebase.js";
 import {
   protegerPagina, soles, redondear, soloHora, fechaHora, escaparHTML, aviso,
   confirmar, mensajeError, abrirModal, cerrarModal, imprimirTicket,
-  escucharCaja, escucharVentasDeCaja, refCajaActual, NOMBRES_METODO
+  escucharCaja, escucharVentasDeCaja, refCajaActual, NOMBRES_METODO,
+  encabezadoTicket, dniValido, anularVentaCredito, mensajeAnulacion
 } from "./comun.js";
 
 const MAX_VENTAS_LISTA = 30; // cuántas ventas del turno mostrar
@@ -36,6 +42,10 @@ const montosRapidos = document.getElementById("montosRapidos");
 const vueltoCaja = document.getElementById("vueltoCaja");
 const vueltoRotulo = document.getElementById("vueltoRotulo");
 const vueltoMonto = document.getElementById("vueltoMonto");
+const zonaCredito = document.getElementById("zonaCredito");
+const inDni = document.getElementById("dniCliente");
+const inNombreCliente = document.getElementById("nombreCliente");
+const infoCliente = document.getElementById("infoCliente");
 const errorCobro = document.getElementById("errorCobro");
 const btnConfirmar = document.getElementById("btnConfirmarCobro");
 
@@ -48,6 +58,7 @@ let dejarDeEscucharVentas = null;
 let ventasTurno = [];
 let metodoPago = "efectivo";
 let ultimaVenta = null;           // para imprimir el ticket
+let dniConsultado = "";           // evita consultas repetidas del mismo DNI
 /** Pedido: Map productoId -> { productoId, nombre, precio, cantidad } */
 const pedido = new Map();
 
@@ -230,13 +241,16 @@ btnCobrar.addEventListener("click", () => {
   if (pedido.size === 0) return;
   const total = totalDelPedido();
   cobroTotal.textContent = soles(total);
-  elegirMetodo("efectivo");
   inRecibido.value = "";
+  inDni.value = "";
+  inNombreCliente.value = "";
+  infoCliente.classList.add("oculto");
+  dniConsultado = "";
   dibujarMontosRapidos(total);
   actualizarVuelto();
   errorCobro.classList.add("oculto");
   abrirModal("modalCobro");
-  inRecibido.focus();
+  elegirMetodo("efectivo");
 });
 
 document.getElementById("btnCerrarCobro").addEventListener("click", () => cerrarModal("modalCobro"));
@@ -252,7 +266,10 @@ function elegirMetodo(metodo) {
     b.setAttribute("aria-pressed", String(b.dataset.metodo === metodo))
   );
   zonaEfectivo.classList.toggle("oculto", metodo !== "efectivo");
+  zonaCredito.classList.toggle("oculto", metodo !== "credito");
+  btnConfirmar.textContent = metodo === "credito" ? "Confirmar venta al crédito" : "Confirmar venta";
   if (metodo === "efectivo") inRecibido.focus();
+  if (metodo === "credito") inDni.focus();
   errorCobro.classList.add("oculto");
 }
 
@@ -295,6 +312,59 @@ function actualizarVuelto() {
   }
 }
 
+// ------------------------------------------------------------
+// Datos del cliente (crédito): autocompletar nombre y mostrar deuda
+// ------------------------------------------------------------
+inDni.addEventListener("input", () => {
+  // Solo números, máximo 8
+  inDni.value = inDni.value.replace(/\D/g, "").slice(0, 8);
+  if (dniValido(inDni.value)) {
+    buscarCliente(inDni.value);
+  } else {
+    dniConsultado = "";
+    infoCliente.classList.add("oculto");
+  }
+});
+
+async function buscarCliente(dni) {
+  if (dni === dniConsultado) return;
+  dniConsultado = dni;
+  infoCliente.className = "info-cliente";
+  infoCliente.textContent = "Buscando cliente…";
+  try {
+    // 1) Nombre guardado en "clientes" (ID = DNI)
+    const snapCliente = await getDoc(doc(db, "clientes", dni));
+    // 2) Créditos de ese DNI (consulta por un solo campo; el estado se filtra aquí)
+    const snapCreditos = await getDocs(query(collection(db, "creditos"), where("dni", "==", dni)));
+    if (dni !== inDni.value) return; // el usuario ya cambió el DNI
+
+    const pendientes = snapCreditos.docs.map((d) => d.data()).filter((c) => c.estado === "pendiente");
+    const deuda = redondear(pendientes.reduce((s, c) => s + (Number(c.saldoPendiente) || 0), 0));
+
+    if (snapCliente.exists()) {
+      inNombreCliente.value = snapCliente.data().nombre || "";
+      if (deuda > 0) {
+        infoCliente.className = "info-cliente debe";
+        infoCliente.textContent = `Cliente registrado. Debe actualmente ${soles(deuda)} en ${pendientes.length} crédito(s).`;
+      } else {
+        infoCliente.className = "info-cliente al-dia";
+        infoCliente.textContent = "Cliente registrado. No tiene deudas pendientes.";
+      }
+    } else {
+      infoCliente.className = "info-cliente";
+      infoCliente.textContent = "Cliente nuevo: escribe su nombre completo.";
+      inNombreCliente.focus();
+    }
+  } catch (error) {
+    console.error(error);
+    infoCliente.className = "info-cliente";
+    infoCliente.textContent = "No se pudo consultar el cliente: " + mensajeError(error);
+  }
+}
+
+// ------------------------------------------------------------
+// Guardar venta
+// ------------------------------------------------------------
 formCobro.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!cajaAbierta || pedido.size === 0) return;
@@ -302,6 +372,9 @@ formCobro.addEventListener("submit", async (e) => {
   const total = totalDelPedido();
   let montoRecibido = total;
   let vuelto = 0;
+  const esCredito = metodoPago === "credito";
+  let dni = "";
+  let nombreCliente = "";
 
   if (metodoPago === "efectivo") {
     const recibido = redondear(parseFloat(inRecibido.value));
@@ -315,6 +388,20 @@ formCobro.addEventListener("submit", async (e) => {
     vuelto = redondear(recibido - total);
   }
 
+  if (esCredito) {
+    dni = inDni.value.trim();
+    nombreCliente = inNombreCliente.value.trim().replace(/\s+/g, " ");
+    if (!dniValido(dni)) {
+      inDni.focus();
+      return mostrarErrorCobro("El DNI debe tener exactamente 8 dígitos numéricos.");
+    }
+    if (nombreCliente.length < 3) {
+      inNombreCliente.focus();
+      return mostrarErrorCobro("Escribe el nombre completo del cliente.");
+    }
+    montoRecibido = 0; // en un crédito no se recibe dinero
+  }
+
   const items = [...pedido.values()].map((it) => ({
     productoId: it.productoId,
     nombre: it.nombre,
@@ -322,6 +409,9 @@ formCobro.addEventListener("submit", async (e) => {
     cantidad: it.cantidad,
     subtotal: redondear(it.precio * it.cantidad)
   }));
+
+  const ventaRef = doc(collection(db, "ventas"));
+  const creditoRef = esCredito ? doc(collection(db, "creditos")) : null;
 
   const venta = {
     fecha: serverTimestamp(),
@@ -335,20 +425,47 @@ formCobro.addEventListener("submit", async (e) => {
     cierreId: cajaAbierta.id,
     anulada: false
   };
+  if (esCredito) {
+    venta.dni = dni;
+    venta.nombreCliente = nombreCliente;
+    venta.creditoId = creditoRef.id;
+  }
 
   btnConfirmar.disabled = true;
+  const textoBoton = btnConfirmar.textContent;
   btnConfirmar.textContent = "Guardando…";
   try {
-    const ventaRef = doc(collection(db, "ventas"));
     // Transacción: confirma que la caja sigue abierta en el servidor
-    // (por si la otra PC la cerró hace un momento).
+    // (por si la otra PC la cerró hace un momento) y guarda todo junto.
     await runTransaction(db, async (tx) => {
       const cfg = await tx.get(refCajaActual());
       if (!cfg.exists() || cfg.data().cierreId !== venta.cierreId) throw new Error("SIN_CAJA");
       tx.set(ventaRef, venta);
+
+      if (esCredito) {
+        tx.set(creditoRef, {
+          ventaId: ventaRef.id,
+          dni,
+          nombreCliente,
+          items,
+          total,
+          saldoPendiente: total,
+          estado: "pendiente",
+          fecha: serverTimestamp(),
+          usuarioNombre: usuario.nombre,
+          cierreId: venta.cierreId,
+          pagos: [],
+          fechaPago: null
+        });
+        tx.set(doc(db, "clientes", dni), {
+          dni,
+          nombre: nombreCliente,
+          actualizadoEn: serverTimestamp()
+        }, { merge: true });
+      }
     });
 
-    ultimaVenta = { id: ventaRef.id, ...venta, fecha: new Date() };
+    ultimaVenta = { id: ventaRef.id, ...venta, fecha: new Date(), saldoPendiente: esCredito ? total : 0 };
     pedido.clear();
     dibujarPedido();
     cerrarModal("modalCobro");
@@ -362,7 +479,7 @@ formCobro.addEventListener("submit", async (e) => {
     }
   } finally {
     btnConfirmar.disabled = false;
-    btnConfirmar.textContent = "Confirmar venta";
+    btnConfirmar.textContent = textoBoton;
   }
 });
 
@@ -372,12 +489,23 @@ function mostrarErrorCobro(texto) {
 }
 
 function mostrarVentaOk(v) {
+  let extra = "";
+  if (v.metodoPago === "efectivo") {
+    extra = `
+      <dt>Recibido</dt><dd>${soles(v.montoRecibido)}</dd>
+      <dt>Vuelto</dt><dd style="color:var(--verde);font-size:1.4rem">${soles(v.vuelto)}</dd>`;
+  } else if (v.metodoPago === "credito") {
+    extra = `
+      <dt>Cliente</dt><dd>${escaparHTML(v.nombreCliente)}</dd>
+      <dt>DNI</dt><dd>${escaparHTML(v.dni)}</dd>
+      <dt>Saldo pendiente</dt><dd style="color:var(--rosa);font-size:1.4rem">${soles(v.total)}</dd>`;
+  }
+  document.getElementById("tituloVentaOk").textContent =
+    v.metodoPago === "credito" ? "Venta al crédito registrada" : "Venta registrada";
   document.getElementById("resumenVentaOk").innerHTML = `
     <dt>Total</dt><dd>${soles(v.total)}</dd>
     <dt>Método</dt><dd>${NOMBRES_METODO[v.metodoPago]}</dd>
-    ${v.metodoPago === "efectivo" ? `
-      <dt>Recibido</dt><dd>${soles(v.montoRecibido)}</dd>
-      <dt>Vuelto</dt><dd style="color:var(--verde);font-size:1.4rem">${soles(v.vuelto)}</dd>` : ""}`;
+    ${extra}`;
   abrirModal("modalVentaOk");
   document.getElementById("btnNuevaVenta").focus();
 }
@@ -402,11 +530,14 @@ function dibujarVentasTurno() {
   const esAdmin = usuario?.rol === "admin";
   tablaTurno.innerHTML = lista.map((v) => {
     const detalle = (v.items || []).map((it) => `${it.cantidad}× ${escaparHTML(it.nombre)}`).join(", ");
+    const metodo = v.metodoPago === "credito"
+      ? `<span class="etiqueta-estado rosa">Crédito</span><br><small>${escaparHTML(v.nombreCliente || "")}</small>`
+      : (NOMBRES_METODO[v.metodoPago] || v.metodoPago);
     return `
       <tr class="${v.anulada ? "anulada" : ""}">
         <td>${soloHora(v.fecha)}</td>
         <td>${detalle}</td>
-        <td>${NOMBRES_METODO[v.metodoPago] || v.metodoPago}</td>
+        <td>${metodo}</td>
         <td class="num">${soles(v.total)}</td>
         <td>${escaparHTML(v.usuarioNombre || "—")}</td>
         <td>
@@ -427,20 +558,39 @@ tablaTurno.addEventListener("click", async (e) => {
   if (!v) return;
 
   if (btn.dataset.accion === "ticket") {
-    imprimirTicket(htmlTicket(v));
+    let datos = v;
+    if (v.metodoPago === "credito" && v.creditoId) {
+      // Reimpresión: leer el saldo actual del crédito
+      try {
+        const snap = await getDoc(doc(db, "creditos", v.creditoId));
+        datos = { ...v, saldoPendiente: snap.exists() ? snap.data().saldoPendiente : v.total };
+      } catch {
+        datos = { ...v, saldoPendiente: v.total };
+      }
+    }
+    imprimirTicket(htmlTicket(datos));
   } else if (btn.dataset.accion === "anular") {
-    const ok = await confirmar(`¿Anular la venta de ${soles(v.total)} (${soloHora(v.fecha)})? No se borra, pero deja de contar en caja y reportes.`, "Anular venta", true);
+    const esCredito = v.metodoPago === "credito";
+    const ok = await confirmar(
+      `¿Anular la venta ${esCredito ? "al crédito " : ""}de ${soles(v.total)} (${soloHora(v.fecha)})? No se borra, pero deja de contar${esCredito ? " y su crédito se anula" : " en caja y reportes"}.`,
+      "Anular venta", true
+    );
     if (!ok) return;
     try {
-      await updateDoc(doc(db, "ventas", v.id), {
-        anulada: true,
-        anuladaPor: usuario.nombre,
-        anuladaEn: serverTimestamp()
-      });
-      aviso("Venta anulada.");
+      if (esCredito && v.creditoId) {
+        await anularVentaCredito(v.id, v.creditoId, usuario.nombre);
+        aviso("Venta al crédito anulada.");
+      } else {
+        await updateDoc(doc(db, "ventas", v.id), {
+          anulada: true,
+          anuladaPor: usuario.nombre,
+          anuladaEn: serverTimestamp()
+        });
+        aviso("Venta anulada.");
+      }
     } catch (error) {
       console.error(error);
-      aviso(mensajeError(error), "error");
+      aviso(mensajeAnulacion(error), "error");
     }
   }
 });
@@ -449,30 +599,48 @@ tablaTurno.addEventListener("click", async (e) => {
 // Ticket de venta (80 mm)
 // ------------------------------------------------------------
 function htmlTicket(v) {
+  const esCredito = v.metodoPago === "credito";
   const filas = (v.items || []).map((it) => `
     <tr><td colspan="2">${escaparHTML(it.nombre)}</td></tr>
     <tr><td>&nbsp;&nbsp;${it.cantidad} x ${soles(it.precio)}</td><td class="num">${soles(it.subtotal)}</td></tr>`).join("");
+
+  let pago = "";
+  if (esCredito) {
+    pago = `
+      <tr><td>Pago:</td><td class="num">AL CRÉDITO</td></tr>
+      <tr class="total"><td>Saldo pendiente</td><td class="num">${soles(v.saldoPendiente ?? v.total)}</td></tr>`;
+  } else {
+    pago = `
+      <tr><td>Pago:</td><td class="num">${NOMBRES_METODO[v.metodoPago] || v.metodoPago}</td></tr>
+      ${v.metodoPago === "efectivo" ? `
+        <tr><td>Recibido:</td><td class="num">${soles(v.montoRecibido)}</td></tr>
+        <tr><td>Vuelto:</td><td class="num">${soles(v.vuelto)}</td></tr>` : ""}`;
+  }
+
   return `
     <div class="ticket">
-      <h1>Alana</h1>
-      <p class="centro">Comida rápida · Cel. 930 822 405</p>
+      ${encabezadoTicket(esCredito ? "VENTA AL CRÉDITO" : "")}
       <hr>
       <table>
         <tr><td>Fecha:</td><td class="num">${fechaHora(v.fecha)}</td></tr>
         <tr><td>Ticket:</td><td class="num">${v.id.slice(-6).toUpperCase()}</td></tr>
         <tr><td>Atendió:</td><td class="num">${escaparHTML(v.usuarioNombre || "")}</td></tr>
+        ${esCredito ? `
+          <tr><td>DNI:</td><td class="num">${escaparHTML(v.dni)}</td></tr>
+          <tr><td colspan="2">Cliente: ${escaparHTML(v.nombreCliente)}</td></tr>` : ""}
       </table>
       <hr>
       <table>${filas}</table>
       <hr>
       <table>
         <tr class="total"><td>TOTAL</td><td class="num">${soles(v.total)}</td></tr>
-        <tr><td>Pago:</td><td class="num">${NOMBRES_METODO[v.metodoPago] || v.metodoPago}</td></tr>
-        ${v.metodoPago === "efectivo" ? `
-          <tr><td>Recibido:</td><td class="num">${soles(v.montoRecibido)}</td></tr>
-          <tr><td>Vuelto:</td><td class="num">${soles(v.vuelto)}</td></tr>` : ""}
+        ${pago}
       </table>
       <hr>
+      ${esCredito ? `
+        <br><br>
+        <p class="centro">______________________<br>Firma del cliente<br>DNI ${escaparHTML(v.dni)}</p>
+        <hr>` : ""}
       <p class="centro">¡Gracias por su preferencia!</p>
       <p class="centro" style="font-size:10px">Documento no válido como comprobante de pago</p>
     </div>`;

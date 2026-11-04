@@ -8,8 +8,14 @@
 
 import {
   auth, db, onAuthStateChanged, signOut, doc, getDoc,
-  collection, onSnapshot, query, where
+  collection, onSnapshot, query, where, runTransaction, serverTimestamp
 } from "./firebase.js";
+
+// ------------------------------------------------------------
+// Datos del negocio (cambiar aquí si cambian)
+// ------------------------------------------------------------
+export const RUC = "15605130906";
+export const TELEFONO = "930 822 405";
 
 export const ZONA = "America/Lima";
 // Perú no usa horario de verano: siempre es UTC-5.
@@ -88,6 +94,7 @@ export async function cerrarSesion() {
 // ------------------------------------------------------------
 const MENU = [
   { href: "ventas.html", texto: "Ventas", soloAdmin: false },
+  { href: "creditos.html", texto: "Créditos", soloAdmin: false },
   { href: "productos.html", texto: "Productos", soloAdmin: true },
   { href: "reportes.html", texto: "Reportes", soloAdmin: true },
   { href: "caja.html", texto: "Caja", soloAdmin: false }
@@ -310,12 +317,27 @@ export function imprimirTicket(html) {
   window.print();
 }
 
+/**
+ * Encabezado común de todos los tickets: marca, RUC y teléfono.
+ * @param {string} subtitulo  Texto opcional en negrita debajo (ej. "VENTA AL CRÉDITO").
+ */
+export function encabezadoTicket(subtitulo = "") {
+  return `
+    <h1>Alana</h1>
+    <p class="centro">RUC: ${RUC}</p>
+    <p class="centro">Comida rápida · Cel. ${TELEFONO}</p>
+    ${subtitulo ? `<hr><p class="centro"><strong>${subtitulo}</strong></p>` : ""}`;
+}
+
 export const NOMBRES_METODO = {
   efectivo: "Efectivo",
   yape: "Yape",
   plin: "Plin",
-  tarjeta: "Tarjeta"
+  tarjeta: "Tarjeta",
+  credito: "Crédito"
 };
+// Métodos con los que ENTRA dinero (los que suman en caja y reportes).
+// "credito" no está aquí a propósito: un crédito no es dinero cobrado.
 export const METODOS = ["efectivo", "yape", "plin", "tarjeta"];
 
 // ------------------------------------------------------------
@@ -364,17 +386,106 @@ export function escucharVentasDeCaja(cierreId, callback) {
   }, (error) => { console.error(error); aviso(mensajeError(error), "error"); });
 }
 
-/** Suma las ventas NO anuladas: total, cantidad y total por método. */
-export function calcularTotales(ventas) {
-  const porMetodo = { efectivo: 0, yape: 0, plin: 0, tarjeta: 0 };
-  let total = 0;
+/**
+ * Escucha en tiempo real los cobros de créditos registrados en una caja.
+ * Consulta por un solo campo (cierreId): no requiere índice.
+ */
+export function escucharCobrosDeCaja(cierreId, callback) {
+  const q = query(collection(db, "cobros"), where("cierreId", "==", cierreId));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })));
+  }, (error) => { console.error(error); aviso(mensajeError(error), "error"); });
+}
+
+const metodosEnCero = () => ({ efectivo: 0, yape: 0, plin: 0, tarjeta: 0 });
+
+/**
+ * Calcula los totales de DINERO COBRADO (lo usan Caja y Reportes).
+ * Regla: una venta al crédito NO cuenta como venta mientras no se pague.
+ *  - Ventas normales no anuladas: suman al total y a su método.
+ *  - Ventas al crédito: NO suman; solo se informan en "creditosOtorgados".
+ *  - Cobros de créditos: suman al total y al método con que pagaron.
+ *    Un crédito cuenta como 1 venta recién cuando se paga completo.
+ * @param {Array} ventas  Documentos de "ventas".
+ * @param {Array} cobros  Documentos de "cobros" (opcional).
+ */
+export function calcularTotales(ventas, cobros = []) {
+  const porMetodo = metodosEnCero();          // ventas normales + cobros
+  const cobrosPorMetodo = metodosEnCero();    // solo cobros de créditos
+  let totalVentasDirectas = 0;
   let numVentas = 0;
+  let creditosCantidad = 0;
+  let creditosMonto = 0;
+
   for (const v of ventas) {
     if (v.anulada) continue;
-    total += Number(v.total) || 0;
+    const monto = Number(v.total) || 0;
+    if (v.metodoPago === "credito") {
+      creditosCantidad++;
+      creditosMonto += monto;
+      continue;
+    }
+    totalVentasDirectas += monto;
     numVentas++;
-    if (v.metodoPago in porMetodo) porMetodo[v.metodoPago] += Number(v.total) || 0;
+    if (v.metodoPago in porMetodo) porMetodo[v.metodoPago] += monto;
   }
-  for (const m of METODOS) porMetodo[m] = redondear(porMetodo[m]);
-  return { total: redondear(total), numVentas, porMetodo };
+
+  let totalCobros = 0;
+  let creditosCompletados = 0;
+  for (const c of cobros) {
+    const monto = Number(c.monto) || 0;
+    totalCobros += monto;
+    if (c.metodo in porMetodo) {
+      porMetodo[c.metodo] += monto;
+      cobrosPorMetodo[c.metodo] += monto;
+    }
+    if (c.completaCredito) creditosCompletados++;
+  }
+
+  for (const m of METODOS) {
+    porMetodo[m] = redondear(porMetodo[m]);
+    cobrosPorMetodo[m] = redondear(cobrosPorMetodo[m]);
+  }
+  return {
+    total: redondear(totalVentasDirectas + totalCobros),
+    numVentas: numVentas + creditosCompletados,
+    porMetodo,
+    totalVentasDirectas: redondear(totalVentasDirectas),
+    cobros: { total: redondear(totalCobros), cantidad: cobros.length, porMetodo: cobrosPorMetodo },
+    creditosOtorgados: { cantidad: creditosCantidad, monto: redondear(creditosMonto) }
+  };
+}
+
+/**
+ * Anula una venta al crédito y su crédito, en una sola transacción.
+ * No se permite si el crédito ya tiene pagos registrados.
+ * Lanza Error("TIENE_PAGOS") o Error("YA_NO_PENDIENTE") según el caso.
+ */
+export async function anularVentaCredito(ventaId, creditoId, nombreUsuario) {
+  const refVenta = doc(db, "ventas", ventaId);
+  const refCredito = doc(db, "creditos", creditoId);
+  await runTransaction(db, async (tx) => {
+    const credito = await tx.get(refCredito);
+    if (credito.exists()) {
+      const datos = credito.data();
+      if ((datos.pagos || []).length > 0) throw new Error("TIENE_PAGOS");
+      if (datos.estado !== "pendiente") throw new Error("YA_NO_PENDIENTE");
+    }
+    tx.update(refVenta, { anulada: true, anuladaPor: nombreUsuario, anuladaEn: serverTimestamp() });
+    if (credito.exists()) {
+      tx.update(refCredito, { estado: "anulado", saldoPendiente: 0, anuladoPor: nombreUsuario, anuladoEn: serverTimestamp() });
+    }
+  });
+}
+
+/** Mensaje claro para los errores de anularVentaCredito. */
+export function mensajeAnulacion(error) {
+  if (error.message === "TIENE_PAGOS") return "No se puede anular: este crédito ya tiene pagos registrados.";
+  if (error.message === "YA_NO_PENDIENTE") return "Este crédito ya no está pendiente (fue pagado o anulado).";
+  return mensajeError(error);
+}
+
+/** Valida DNI peruano: exactamente 8 dígitos. */
+export function dniValido(dni) {
+  return /^\d{8}$/.test(String(dni || ""));
 }

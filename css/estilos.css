@@ -386,7 +386,7 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: .95rem; }
 .total-grande { font-size: 2.7rem; font-weight: 800; color: var(--negro); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 
 /* Modal de cobro */
-.metodos { display: grid; grid-template-columns: repeat(4, 1fr); gap: .6rem; margin-bottom: 1.1rem; }
+.metodos { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: .6rem; margin-bottom: 1.1rem; }
 .metodo-btn {
   font: inherit; font-weight: 800; font-size: 1.05rem; min-height: 64px; cursor: pointer;
   border: 2px solid var(--negro); border-radius: var(--radio); background: #fff; color: var(--negro);
@@ -543,3 +543,35 @@ dialog.modal[open] { animation: entrarModal .18s ease-out; }
 .ticket td { padding: 1px 0; vertical-align: top; }
 .ticket td.num { text-align: right; white-space: nowrap; }
 .ticket .total { font-size: 16px; font-weight: bold; }
+
+/* ---------- 12. Créditos ---------- */
+/* Botón "Crédito" en el modal de cobro: rosa para diferenciarlo */
+.metodo-btn.metodo-credito { border-style: dashed; }
+.metodo-btn.metodo-credito[aria-pressed="true"] { background: var(--rosa); color: #fff; border-style: solid; }
+
+/* Mensaje al consultar el DNI del cliente */
+.info-cliente {
+  padding: .65rem .9rem; border-radius: var(--radio-chico); font-weight: 700;
+  border: 2px dashed var(--negro); background: var(--fondo-suave);
+}
+.info-cliente.debe { background: var(--rosa-claro); color: var(--rosa); border-color: var(--rosa); border-style: solid; }
+.info-cliente.al-dia { background: var(--verde-claro); color: var(--verde); border-color: var(--verde); border-style: solid; }
+
+.etiqueta-estado.rosa { background: var(--rosa-claro); color: var(--rosa); }
+
+/* Indicador solo informativo (no suma a los totales) */
+.indicador.informativo { background: #fff; border-style: dashed; }
+.indicador small { display: block; color: var(--gris); font-weight: 600; margin-top: .15rem; }
+.indicador.destacado small { color: #ddd; }
+
+/* Filas que abren el detalle al hacer clic */
+.tabla tr.fila-clic { cursor: pointer; }
+.tabla tr.fila-clic:focus-visible { outline: 3px solid var(--rosa-vivo); outline-offset: -3px; }
+
+/* Días sin pagar: en rojo desde 15 días */
+.dias { font-weight: 800; }
+.dias.dias-alerta { color: var(--rojo-oscuro); }
+
+@media print {
+  .indicador.informativo { border-style: dashed; }
+}
