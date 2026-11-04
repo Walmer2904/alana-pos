@@ -16,25 +16,56 @@ Publicado en: https://walmer2904.github.io/alana-pos/
 | `index.html` | Todos | Inicio de sesión con correo y contraseña |
 | `ventas.html` | Todos | Punto de venta: catálogo, pedido, cobro (efectivo, Yape, Plin, tarjeta o **crédito**), ticket, ventas del turno (el admin puede anular) |
 | `creditos.html` | Todos | Créditos pendientes en tiempo real, búsqueda por DNI/nombre, registrar pagos y abonos, comprobante, historial de pagados/anulados |
-| `caja.html` | Todos | Apertura y cierre de caja (una sola caja abierta para todas las PCs), cobros de créditos, historial |
-| `productos.html` | Admin | Agregar, editar, activar/desactivar y eliminar productos con foto |
-| `reportes.html` | Admin | Totales cobrados, métodos de pago, cobros de créditos, productos más vendidos, gráfico por día, exportar a Excel |
+| `caja.html` | Todos | Apertura y cierre de caja (una sola caja abierta para todas las PCs), cobros de créditos, egresos, historial |
+| `productos.html` | Admin | Productos con foto, precio, **costo de producción** y ganancia por unidad |
+| `insumos.html` | Admin | Inventario de insumos: stock, compras (costo promedio), salidas/ajustes, historial, stock bajo |
+| `trabajadores.html` | Admin | Trabajadores, pagos (sueldo, adelanto, bono), historial y comprobante con firma |
+| `reportes.html` | Admin | Ventas cobradas, costo, ganancia bruta y neta, pagos a trabajadores, compras de insumos, productos más vendidos, gráfico, Excel |
 
 ## Estructura
 
 ```
 alana-pos/
-├── index.html, ventas.html, creditos.html, productos.html, caja.html, reportes.html
+├── index.html, ventas.html, creditos.html, caja.html, productos.html,
+│   insumos.html, trabajadores.html, reportes.html
+├── manifest.webmanifest   Para instalar el sistema como app
 ├── css/estilos.css        Estilos compartidos (incluye impresión de ticket 80 mm)
-├── img/                   Logo, favicon y patrón de dibujos de la pizarra
+├── img/                   Logo, íconos y patrón de dibujos de la pizarra
 ├── js/firebase.js         Configuración de Firebase (único lugar con la versión del SDK)
-├── js/comun.js            protegerPagina(), menú, RUC, formato de soles/fechas, caja compartida, totales
+├── js/comun.js            protegerPagina(), menú, RUC, formatos, caja compartida, totales,
+│                          validación de DNI, costos, egresos
 ├── js/login.js            Inicio de sesión
-├── js/ventas.js, js/creditos.js, js/productos.js, js/caja.js, js/reportes.js
+├── js/ventas.js, js/creditos.js, js/caja.js, js/productos.js,
+│   js/insumos.js, js/trabajadores.js, js/reportes.js
 └── firestore.rules        Reglas de seguridad (copiar a la consola de Firebase)
 ```
 
 El **RUC** y el teléfono que salen en los tickets están en `js/comun.js` (constantes `RUC` y `TELEFONO`).
+
+## DNI
+
+En todo el sistema (créditos, buscadores y trabajadores) el DNI debe tener **exactamente 8 números** y no puede tener
+todos los números iguales (00000000, 11111111…). Los campos borran letras al escribir y al pegar, y muestran un
+contador "5/8". Las reglas de Firestore también lo exigen. En Créditos, el admin tiene el botón
+**"Revisar DNIs inválidos"**, que lista (sin modificar nada) créditos y clientes guardados con DNI incorrecto.
+
+## Costo de producción y ganancia
+
+- Cada producto tiene **precio de venta** y **costo de producción**. Los productos antiguos sin costo muestran "Falta costo".
+- Al vender, cada item guarda una copia de `costoUnitario` y `costoSubtotal`, así cambiar el costo después no altera reportes antiguos.
+- **Ganancia bruta** = ventas cobradas − costo de producción. **Ganancia neta** = ganancia bruta − pagos a trabajadores.
+- En los cobros de créditos, el costo cuenta en proporción a lo cobrado (costo del crédito × monto cobrado / total del crédito), en la fecha de cada cobro.
+- Las **compras de insumos** se muestran solo como dato informativo: no se restan, porque su costo ya está incluido en el costo de producción de cada producto.
+
+## Insumos, trabajadores y egresos de caja
+
+- El descuento de insumos es **manual** (registrar salidas por uso, merma o ajuste). No se descuenta al vender.
+- Una compra actualiza el costo unitario con **promedio ponderado**: (stock × costo + total pagado) / (stock + cantidad).
+- Si una compra de insumos o un pago a un trabajador se marca **"Pagado con efectivo de caja"** (y hay caja abierta), se crea un
+  documento en `egresos` en la misma transacción. Caja lo resta: **efectivo esperado = monto inicial + ventas en efectivo +
+  cobros de créditos en efectivo − egresos en efectivo**. El cierre guarda el total y el detalle de egresos.
+- `egresos` existe aparte porque `movimientosInsumos` y `pagosTrabajadores` son solo para admin, mientras que la Caja también la usa el cajero.
+- Los trabajadores se **desactivan**, no se eliminan. Los movimientos de insumos y pagos a trabajadores nunca se borran.
 
 ## Ventas al crédito: cómo se cuentan
 
@@ -49,15 +80,20 @@ El **RUC** y el teléfono que salen en los tickets están en `js/comun.js` (cons
 ## Datos en Firestore
 
 - `usuarios/{uid}`: `{ nombre, rol: "admin" | "cajero" }`. Se crean a mano desde la consola.
-- `productos`: `{ nombre, precio, categoria, imagen (base64 JPEG ≤ ~200 KB), activo, creadoEn }`
-- `ventas`: `{ fecha, items[{productoId, nombre, precio, cantidad, subtotal}], total, metodoPago ("efectivo"|"yape"|"plin"|"tarjeta"|"credito"), montoRecibido, vuelto, usuarioId, usuarioNombre, cierreId, anulada }`. Las de crédito además llevan `dni`, `nombreCliente` y `creditoId`.
+- `productos`: `{ nombre, precio, costo, categoria, imagen (base64 JPEG ≤ ~200 KB), activo, creadoEn }`
+- `ventas`: `{ fecha, items[{productoId, nombre, precio, cantidad, subtotal, costoUnitario, costoSubtotal}], total, metodoPago ("efectivo"|"yape"|"plin"|"tarjeta"|"credito"), montoRecibido, vuelto, usuarioId, usuarioNombre, cierreId, anulada }`. Las de crédito además llevan `dni`, `nombreCliente` y `creditoId`.
 - `creditos`: `{ ventaId, dni, nombreCliente, items, total, saldoPendiente, estado ("pendiente"|"pagado"|"anulado"), fecha, usuarioNombre, cierreId, pagos[{monto, metodo, fecha, usuarioNombre, cierreId}], fechaPago }`
 - `clientes/{dni}`: `{ dni, nombre, actualizadoEn }`
-- `cobros`: `{ creditoId, ventaId, dni, nombreCliente, monto, metodo, fecha, cierreId, usuarioNombre, completaCredito, items (solo si completa el crédito) }`
-- `cierres`: `{ estado, fechaApertura, fechaCierre, montoInicial, totalVentas, totalPorMetodo, efectivoEsperado, efectivoContado, diferencia, numVentas, creditosOtorgados {cantidad, monto}, cobrosCreditos {total, cantidad, efectivo, yape, plin, tarjeta}, usuarioApertura, usuarioCierre, observacion }`
+- `cobros`: `{ creditoId, ventaId, dni, nombreCliente, monto, metodo, fecha, cierreId, usuarioNombre, completaCredito, items (solo si completa el crédito), totalCredito, costoCredito, costoCompleto }`
+- `insumos`: `{ nombre, unidad, stockActual, costoUnitario, stockMinimo, activo, actualizadoEn }`
+- `movimientosInsumos`: `{ insumoId, nombreInsumo, tipo ("compra"|"salida"|"ajuste"), cantidad, costoTotal, motivo, stockAnterior, stockNuevo, pagadoConCaja, fecha, usuarioNombre, cierreId }`
+- `trabajadores`: `{ nombre, dni, cargo, tipoPago, montoAcordado, activo, fechaIngreso }`
+- `pagosTrabajadores`: `{ trabajadorId, nombreTrabajador, monto, concepto, periodo, metodo, fecha, observacion, usuarioNombre, cierreId, pagadoConCaja }`
+- `egresos`: `{ tipo ("insumo"|"trabajador"), descripcion, monto, metodo: "efectivo", fecha, cierreId, referenciaId, usuarioNombre }`
+- `cierres`: `{ estado, fechaApertura, fechaCierre, montoInicial, totalVentas, totalPorMetodo, efectivoEsperado, efectivoContado, diferencia, numVentas, creditosOtorgados {cantidad, monto}, cobrosCreditos {total, cantidad, efectivo, yape, plin, tarjeta}, egresos {total, cantidad, insumos, trabajadores, detalle[]}, usuarioApertura, usuarioCierre, observacion }`
 - `config/cajaActual`: `{ cierreId }`, el id de la caja abierta (o `null`). Se cambia con transacciones para que nunca haya dos cajas abiertas.
 
-Ninguna consulta necesita índices compuestos: todas filtran por un solo campo (`fecha`, `cierreId`, `estado` o `dni`) y el resto se ordena o filtra en el navegador.
+Ninguna consulta necesita índices compuestos: todas filtran por un solo campo (`fecha`, `cierreId`, `estado`, `dni`, `insumoId` o `trabajadorId`) y el resto se ordena o filtra en el navegador.
 
 ## Crear un usuario nuevo (cajero)
 
