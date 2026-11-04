@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALANA POS · Productos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body class="cargando">
+  <div class="pantalla-carga">ALANA</div>
+  <header class="barra" id="barra"></header>
+
+  <main class="contenido">
+    <div class="encabezado-pagina">
+      <h1>Productos</h1>
+    </div>
+
+    <div class="productos-layout">
+      <!-- Formulario de alta / edición -->
+      <section class="tarjeta" aria-labelledby="tituloForm">
+        <h2 id="tituloForm">Nuevo producto</h2>
+        <form id="formProducto" novalidate>
+          <div class="campo">
+            <label for="nombre">Nombre</label>
+            <input type="text" id="nombre" maxlength="60" required>
+          </div>
+          <div class="campo">
+            <label for="precio">Precio (S/)</label>
+            <input type="number" id="precio" min="0" step="0.10" inputmode="decimal" required>
+          </div>
+          <div class="campo">
+            <label for="categoria">Categoría</label>
+            <input type="text" id="categoria" list="listaCategorias" maxlength="30" placeholder="Ej.: Hamburguesas" required>
+            <datalist id="listaCategorias"></datalist>
+          </div>
+
+          <div class="campo">
+            <span class="etiqueta">Imagen</span>
+            <div class="vista-previa" id="vistaPrevia">Sin imagen</div>
+            <label for="imagen" class="sr-only">Elegir imagen</label>
+            <input type="file" id="imagen" accept="image/*">
+            <small id="infoImagen">Se reduce automáticamente a 400×400 px.</small>
+            <button type="button" class="btn btn-claro btn-chico oculto" id="btnQuitarImagen">Quitar imagen</button>
+          </div>
+
+          <label class="interruptor">
+            <input type="checkbox" id="activo" checked>
+            Activo (visible en Ventas)
+          </label>
+
+          <div id="errorForm" class="mensaje-error oculto" role="alert"></div>
+
+          <div class="form-acciones">
+            <button type="button" class="btn btn-claro oculto" id="btnCancelar">Cancelar</button>
+            <button type="submit" class="btn btn-primario" id="btnGuardar">Guardar producto</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Lista de productos -->
+      <section class="tarjeta" aria-labelledby="tituloLista">
+        <div class="encabezado-pagina">
+          <h2 id="tituloLista">Lista <span class="texto-gris" id="contador"></span></h2>
+        </div>
+        <div class="buscador">
+          <label for="buscar" class="sr-only">Buscar producto</label>
+          <input type="search" id="buscar" placeholder="Buscar por nombre o categoría…">
+        </div>
+        <div class="tabla-contenedor">
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th>Foto</th>
+                <th>Nombre</th>
+                <th>Categoría</th>
+                <th class="num">Precio</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tablaProductos">
+              <tr><td colspan="6" class="vacio">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="js/productos.js"></script>
+</body>
+</html>
