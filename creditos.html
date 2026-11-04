@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALANA POS · Créditos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Kaushan+Script&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+  <link rel="icon" type="image/png" href="img/favicon.png">
+  <meta name="theme-color" content="#141414">
+</head>
+<body class="cargando">
+  <div class="pantalla-carga"><img src="img/logo.png" alt="Cargando ALANA"></div>
+  <header class="barra" id="barra"></header>
+
+  <main class="contenido">
+    <div class="encabezado-pagina">
+      <h1>Créditos</h1>
+      <div class="filtros" id="pestanas" role="group" aria-label="Vista" style="margin:0">
+        <button type="button" class="chip" data-vista="pendientes" aria-pressed="true">Pendientes</button>
+        <button type="button" class="chip" data-vista="historial" aria-pressed="false">Historial</button>
+      </div>
+    </div>
+
+    <!-- ===================== PENDIENTES ===================== -->
+    <div id="vistaPendientes">
+      <div class="alerta alerta-aviso oculto" id="avisoSinCaja" role="alert">
+        <span>No hay una caja abierta. Para registrar pagos de créditos primero abre la caja (el dinero entra a esa caja).</span>
+        <a class="btn btn-primario" href="caja.html">Ir a Caja</a>
+      </div>
+
+      <div class="indicadores">
+        <div class="indicador destacado"><div class="rotulo">Total por cobrar</div><div class="valor" id="kpiPorCobrar">S/ 0.00</div></div>
+        <div class="indicador"><div class="rotulo">Créditos pendientes</div><div class="valor" id="kpiPendientes">0</div></div>
+        <div class="indicador informativo oculto" id="kpiCliente">
+          <div class="rotulo" id="kpiClienteRotulo">Debe el cliente</div>
+          <div class="valor" id="kpiClienteValor">S/ 0.00</div>
+          <small id="kpiClienteDetalle"></small>
+        </div>
+      </div>
+
+      <section class="tarjeta" aria-labelledby="tituloPendientes">
+        <h2 id="tituloPendientes">Créditos pendientes <span class="texto-gris" id="contador"></span></h2>
+        <div class="buscador">
+          <label for="buscar" class="sr-only">Buscar por DNI o nombre</label>
+          <input type="search" id="buscar" placeholder="Buscar por DNI o nombre del cliente…" autocomplete="off">
+        </div>
+        <div class="tabla-contenedor">
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>DNI</th>
+                <th>Cliente</th>
+                <th class="num">Total</th>
+                <th class="num">Saldo</th>
+                <th class="num">Días sin pagar</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tablaPendientes">
+              <tr><td colspan="7" class="vacio">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ===================== HISTORIAL ===================== -->
+    <div id="vistaHistorial" class="oculto">
+      <section class="tarjeta" aria-labelledby="tituloHistorial">
+        <h2 id="tituloHistorial">Historial de créditos pagados y anulados</h2>
+        <p class="texto-gris">Se conservan como respaldo. Filtra por la fecha en que se otorgó el crédito.</p>
+        <form class="rango-personalizado" id="formHistorial" novalidate style="margin-bottom:1rem">
+          <div class="campo">
+            <label for="histDesde">Desde</label>
+            <input type="date" id="histDesde" required>
+          </div>
+          <div class="campo">
+            <label for="histHasta">Hasta</label>
+            <input type="date" id="histHasta" required>
+          </div>
+          <button type="submit" class="btn btn-primario">Buscar</button>
+        </form>
+        <div class="buscador">
+          <label for="buscarHist" class="sr-only">Buscar en historial por DNI o nombre</label>
+          <input type="search" id="buscarHist" placeholder="Buscar por DNI o nombre…" autocomplete="off">
+        </div>
+        <div class="tabla-contenedor">
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th>Fecha del crédito</th>
+                <th>DNI</th>
+                <th>Cliente</th>
+                <th class="num">Total</th>
+                <th>Estado</th>
+                <th>Pagado / anulado el</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tablaHistorial">
+              <tr><td colspan="7" class="vacio">Elige un rango de fechas y presiona Buscar.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Modal: detalle de un crédito -->
+  <dialog class="modal" id="modalDetalle" aria-labelledby="tituloDetalle">
+    <div class="modal-cabecera">
+      <h2 id="tituloDetalle">Detalle del crédito</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalDetalle" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-cuerpo" id="cuerpoDetalle"></div>
+  </dialog>
+
+  <!-- Modal: registrar pago -->
+  <dialog class="modal" id="modalPago" aria-labelledby="tituloPago">
+    <div class="modal-cabecera">
+      <h2 id="tituloPago">Registrar pago</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalPago" aria-label="Cerrar">✕</button>
+    </div>
+    <form class="modal-cuerpo" id="formPago" novalidate>
+      <p id="pagoCliente" style="margin-top:0;font-weight:700"></p>
+      <div class="cobro-total">
+        <span class="etiqueta">Saldo pendiente</span>
+        <span class="total-grande" id="pagoSaldo">S/ 0.00</span>
+      </div>
+
+      <span class="etiqueta" id="etiquetaMetodoPago">¿Con qué paga?</span>
+      <div class="metodos" role="group" aria-labelledby="etiquetaMetodoPago" id="metodosPago">
+        <button type="button" class="metodo-btn" data-metodo="efectivo" aria-pressed="true">Efectivo</button>
+        <button type="button" class="metodo-btn" data-metodo="yape" aria-pressed="false">Yape</button>
+        <button type="button" class="metodo-btn" data-metodo="plin" aria-pressed="false">Plin</button>
+        <button type="button" class="metodo-btn" data-metodo="tarjeta" aria-pressed="false">Tarjeta</button>
+      </div>
+
+      <div class="campo" style="margin-bottom:.4rem">
+        <label for="montoPago">Monto que paga (S/)</label>
+        <input type="number" id="montoPago" class="monto-grande" min="0.10" step="0.10" inputmode="decimal">
+        <small>Puedes registrar un abono parcial. No puede ser mayor que el saldo.</small>
+      </div>
+      <div class="montos-rapidos">
+        <button type="button" class="btn btn-claro btn-chico" id="btnSaldoCompleto">Saldo completo</button>
+      </div>
+
+      <div id="errorPago" class="mensaje-error oculto" role="alert"></div>
+
+      <div class="modal-acciones">
+        <button type="submit" class="btn btn-primario btn-grande" id="btnConfirmarPago">Registrar pago</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: pago registrado -->
+  <dialog class="modal modal-chico" id="modalPagoOk" aria-labelledby="tituloPagoOk">
+    <div class="modal-cabecera"><h2 id="tituloPagoOk">Pago registrado</h2></div>
+    <div class="modal-cuerpo">
+      <dl class="resumen-cierre" id="resumenPagoOk"></dl>
+      <div class="modal-acciones">
+        <button class="btn btn-acento" id="btnImprimirComprobante">Imprimir comprobante</button>
+        <button class="btn btn-primario" data-cerrar="modalPagoOk">Listo</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/creditos.js"></script>
+</body>
+</html>
