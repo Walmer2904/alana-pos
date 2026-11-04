@@ -623,3 +623,6 @@ dialog.modal-ancho { width: min(900px, calc(100vw - 2rem)); }
 /* ---------- 17. Egresos en caja ---------- */
 .indicador.egreso { background: var(--rojo-claro); border-color: var(--rojo); }
 .indicador.egreso .valor { color: var(--rojo-oscuro); }
+
+/* ---------- 18. Reportes de ganancia ---------- */
+.nota-pequena { font-size: .85rem; color: var(--gris); margin: .25rem 0 0; max-width: 90ch; }

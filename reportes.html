@@ -51,6 +51,32 @@
       </div>
     </section>
 
+    <!-- Aviso: productos sin costo (ganancia inexacta) -->
+    <div class="alerta alerta-aviso oculto" id="bannerSinCosto" role="status"></div>
+
+    <!-- Ganancia del periodo -->
+    <section class="tarjeta" aria-labelledby="tituloGanancia">
+      <h2 id="tituloGanancia">Ganancia</h2>
+      <div class="indicadores">
+        <div class="indicador"><div class="rotulo">Ventas cobradas</div><div class="valor" id="gVentas">S/ 0.00</div></div>
+        <div class="indicador"><div class="rotulo">Costo de producción</div><div class="valor" id="gCosto">S/ 0.00</div><small id="gCostoDetalle"></small></div>
+        <div class="indicador"><div class="rotulo">Ganancia bruta</div><div class="valor" id="gBruta">S/ 0.00</div><small id="gMargen">Margen 0.0 %</small></div>
+        <div class="indicador"><div class="rotulo">Pagos a trabajadores</div><div class="valor" id="gPagos">S/ 0.00</div><small id="gPagosDetalle"></small></div>
+        <div class="indicador destacado"><div class="rotulo">Ganancia neta</div><div class="valor" id="gNeta">S/ 0.00</div><small id="gNetaMargen"></small></div>
+        <div class="indicador informativo">
+          <div class="rotulo">Compras de insumos</div>
+          <div class="valor" id="gCompras">S/ 0.00</div>
+          <small id="gComprasDetalle">Informativo: no se resta</small>
+        </div>
+      </div>
+      <p class="nota-pequena">
+        Ganancia bruta = ventas cobradas − costo de producción. Ganancia neta = ganancia bruta − pagos a trabajadores.
+        Las compras de insumos se muestran solo como dato: <strong>no se restan</strong> porque el costo de los insumos
+        ya está incluido en el costo de producción de cada producto. En los cobros de créditos, el costo se cuenta
+        en proporción a lo cobrado, en la fecha de cada cobro.
+      </p>
+    </section>
+
     <!-- Indicadores -->
     <section class="tarjeta" aria-labelledby="tituloResumen">
       <h2 id="tituloResumen">Resumen</h2>
@@ -78,15 +104,21 @@
 
     <div class="cuadricula-2" style="margin-top:1rem">
       <section class="tarjeta" aria-labelledby="tituloGrafico">
-        <h2 id="tituloGrafico">Ventas por día</h2>
-        <div class="grafico-contenedor"><canvas id="grafico" aria-label="Gráfico de barras de ventas por día" role="img"></canvas></div>
+        <h2 id="tituloGrafico">Ventas y ganancia por día</h2>
+        <div class="grafico-contenedor"><canvas id="grafico" aria-label="Gráfico de ventas (barras) y ganancia bruta (línea) por día" role="img"></canvas></div>
       </section>
 
       <section class="tarjeta" aria-labelledby="tituloTop" style="margin-top:0">
-        <h2 id="tituloTop">Productos más vendidos</h2>
+        <div class="encabezado-pagina" style="margin-bottom:.5rem">
+          <h2 id="tituloTop" style="margin:0">Productos más vendidos</h2>
+          <div class="filtros no-imprimir" id="ordenTop" role="group" aria-label="Ordenar por" style="margin:0">
+            <button type="button" class="chip" data-orden="cantidad" aria-pressed="true">Por cantidad</button>
+            <button type="button" class="chip" data-orden="ganancia" aria-pressed="false">Por ganancia</button>
+          </div>
+        </div>
         <div class="tabla-contenedor">
           <table class="tabla">
-            <thead><tr><th>#</th><th>Producto</th><th class="num">Cantidad</th><th class="num">Importe</th></tr></thead>
+            <thead><tr><th>#</th><th>Producto</th><th class="num">Cantidad</th><th class="num">Importe</th><th class="num">Ganancia</th></tr></thead>
             <tbody id="tablaTop"></tbody>
           </table>
         </div>

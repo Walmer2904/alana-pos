@@ -571,6 +571,21 @@ export function itemTieneCosto(item) {
   return typeof item?.costoSubtotal === "number" && Number.isFinite(item.costoSubtotal);
 }
 
+/**
+ * Suma el costo de una lista de items.
+ * @returns {{ total: number, completo: boolean, sinCosto: string[] }}
+ *   completo = false si algún item no tenía costo (nombres en sinCosto).
+ */
+export function costoDeItems(items) {
+  let total = 0;
+  const sinCosto = [];
+  for (const it of items || []) {
+    if (itemTieneCosto(it)) total += it.costoSubtotal;
+    else sinCosto.push(it.nombre);
+  }
+  return { total: redondear(total), completo: sinCosto.length === 0, sinCosto };
+}
+
 /** Ganancia por unidad en S/ y en % sobre el precio de venta. */
 export function gananciaUnidad(precio, costo) {
   const p = Number(precio) || 0;

@@ -18,7 +18,7 @@ import {
   protegerPagina, soles, redondear, fechaHora, soloFecha, escaparHTML, aviso,
   confirmar, mensajeError, abrirModal, cerrarModal, imprimirTicket, escucharCaja,
   refCajaActual, NOMBRES_METODO, encabezadoTicket, claveDiaLima, inicioDiaLima,
-  sumarDias, anularVentaCredito, mensajeAnulacion, dniValido, errorDni
+  sumarDias, anularVentaCredito, mensajeAnulacion, dniValido, errorDni, costoDeItems
 } from "./comun.js";
 
 const MS_DIA = 24 * 60 * 60 * 1000;
@@ -461,6 +461,12 @@ formPago.addEventListener("submit", async (e) => {
       };
       // Al completar, guardamos los productos para "más vendidos" en Reportes.
       if (completa) cobro.items = credito.items || [];
+      // Costo del crédito: Reportes cuenta el costo proporcional a lo cobrado
+      // (costoCredito × monto / totalCredito) en la fecha de este cobro.
+      const costo = costoDeItems(credito.items);
+      cobro.totalCredito = Number(credito.total) || 0;
+      cobro.costoCredito = costo.total;
+      cobro.costoCompleto = costo.completo;
       tx.set(refCobro, cobro);
 
       return { credito: { id: refCredito.id, ...credito, ...cambios }, pago, saldo: cambios.saldoPendiente, completa, numero: cambios.pagos.length };
