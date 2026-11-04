@@ -14,31 +14,50 @@ Publicado en: https://walmer2904.github.io/alana-pos/
 | Página | Quién | Qué hace |
 |---|---|---|
 | `index.html` | Todos | Inicio de sesión con correo y contraseña |
-| `ventas.html` | Todos | Punto de venta: catálogo, pedido, cobro, ticket, ventas del turno (el admin puede anular) |
-| `caja.html` | Todos | Apertura y cierre de caja (una sola caja abierta para todas las PCs), historial |
+| `ventas.html` | Todos | Punto de venta: catálogo, pedido, cobro (efectivo, Yape, Plin, tarjeta o **crédito**), ticket, ventas del turno (el admin puede anular) |
+| `creditos.html` | Todos | Créditos pendientes en tiempo real, búsqueda por DNI/nombre, registrar pagos y abonos, comprobante, historial de pagados/anulados |
+| `caja.html` | Todos | Apertura y cierre de caja (una sola caja abierta para todas las PCs), cobros de créditos, historial |
 | `productos.html` | Admin | Agregar, editar, activar/desactivar y eliminar productos con foto |
-| `reportes.html` | Admin | Totales, métodos de pago, productos más vendidos, gráfico por día, exportar a Excel |
+| `reportes.html` | Admin | Totales cobrados, métodos de pago, cobros de créditos, productos más vendidos, gráfico por día, exportar a Excel |
 
 ## Estructura
 
 ```
 alana-pos/
-├── index.html, ventas.html, productos.html, caja.html, reportes.html
+├── index.html, ventas.html, creditos.html, productos.html, caja.html, reportes.html
 ├── css/estilos.css        Estilos compartidos (incluye impresión de ticket 80 mm)
+├── img/                   Logo, favicon y patrón de dibujos de la pizarra
 ├── js/firebase.js         Configuración de Firebase (único lugar con la versión del SDK)
-├── js/comun.js            protegerPagina(), menú, formato de soles/fechas, caja compartida
+├── js/comun.js            protegerPagina(), menú, RUC, formato de soles/fechas, caja compartida, totales
 ├── js/login.js            Inicio de sesión
-├── js/ventas.js, js/productos.js, js/caja.js, js/reportes.js
+├── js/ventas.js, js/creditos.js, js/productos.js, js/caja.js, js/reportes.js
 └── firestore.rules        Reglas de seguridad (copiar a la consola de Firebase)
 ```
+
+El **RUC** y el teléfono que salen en los tickets están en `js/comun.js` (constantes `RUC` y `TELEFONO`).
+
+## Ventas al crédito: cómo se cuentan
+
+- Al vender al crédito se piden **DNI (8 dígitos)** y **nombre**. Si el DNI ya existe, se autocompleta el nombre y se muestra cuánto debe.
+- Un crédito **no cuenta como venta** mientras no se pague: no suma en Caja ni en Reportes. Solo aparece en Créditos.
+- Cada pago (total o abono) se guarda en `cobros` y cuenta **en la fecha del pago**, con el método con que pagaron, en la caja abierta en ese momento (si es efectivo, suma al efectivo esperado).
+- Los productos del crédito cuentan en "más vendidos" cuando el crédito queda totalmente pagado. En ese momento también cuenta como 1 venta.
+- Para registrar un pago debe haber una caja abierta.
+- Los créditos pagados o anulados **nunca se borran**: pasan al Historial de la pestaña Créditos.
+- El admin puede anular una venta al crédito **solo si no tiene pagos**. Al hacerlo también se anula el crédito.
 
 ## Datos en Firestore
 
 - `usuarios/{uid}`: `{ nombre, rol: "admin" | "cajero" }`. Se crean a mano desde la consola.
 - `productos`: `{ nombre, precio, categoria, imagen (base64 JPEG ≤ ~200 KB), activo, creadoEn }`
-- `ventas`: `{ fecha, items[{productoId, nombre, precio, cantidad, subtotal}], total, metodoPago, montoRecibido, vuelto, usuarioId, usuarioNombre, cierreId, anulada }`
-- `cierres`: `{ estado, fechaApertura, fechaCierre, montoInicial, totalVentas, totalPorMetodo, efectivoEsperado, efectivoContado, diferencia, numVentas, usuarioApertura, usuarioCierre, observacion }`
+- `ventas`: `{ fecha, items[{productoId, nombre, precio, cantidad, subtotal}], total, metodoPago ("efectivo"|"yape"|"plin"|"tarjeta"|"credito"), montoRecibido, vuelto, usuarioId, usuarioNombre, cierreId, anulada }`. Las de crédito además llevan `dni`, `nombreCliente` y `creditoId`.
+- `creditos`: `{ ventaId, dni, nombreCliente, items, total, saldoPendiente, estado ("pendiente"|"pagado"|"anulado"), fecha, usuarioNombre, cierreId, pagos[{monto, metodo, fecha, usuarioNombre, cierreId}], fechaPago }`
+- `clientes/{dni}`: `{ dni, nombre, actualizadoEn }`
+- `cobros`: `{ creditoId, ventaId, dni, nombreCliente, monto, metodo, fecha, cierreId, usuarioNombre, completaCredito, items (solo si completa el crédito) }`
+- `cierres`: `{ estado, fechaApertura, fechaCierre, montoInicial, totalVentas, totalPorMetodo, efectivoEsperado, efectivoContado, diferencia, numVentas, creditosOtorgados {cantidad, monto}, cobrosCreditos {total, cantidad, efectivo, yape, plin, tarjeta}, usuarioApertura, usuarioCierre, observacion }`
 - `config/cajaActual`: `{ cierreId }`, el id de la caja abierta (o `null`). Se cambia con transacciones para que nunca haya dos cajas abiertas.
+
+Ninguna consulta necesita índices compuestos: todas filtran por un solo campo (`fecha`, `cierreId`, `estado` o `dni`) y el resto se ordena o filtra en el navegador.
 
 ## Crear un usuario nuevo (cajero)
 

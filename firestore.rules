@@ -52,5 +52,25 @@ service cloud.firestore {
       allow create, update: if logueado();
       allow delete: if false;
     }
+
+    // Créditos (ventas fiadas): son el respaldo ante reclamos, NUNCA se borran.
+    // Pagados y anulados solo cambian de estado.
+    match /creditos/{id} {
+      allow read, create, update: if logueado();
+      allow delete: if false;
+    }
+
+    // Clientes (ID del documento = DNI). Nunca se borran.
+    match /clientes/{dni} {
+      allow read, create, update: if logueado();
+      allow delete: if false;
+    }
+
+    // Cobros de créditos: cada pago registrado. Caja y Reportes los suman.
+    // Solo el admin puede corregirlos o borrarlos.
+    match /cobros/{id} {
+      allow read, create: if logueado();
+      allow update, delete: if esAdmin();
+    }
   }
 }
