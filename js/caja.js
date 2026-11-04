@@ -15,7 +15,7 @@ import {
   protegerPagina, soles, redondear, fechaHora, escaparHTML, aviso, confirmar,
   mensajeError, abrirModal, cerrarModal, imprimirTicket, escucharCaja,
   escucharVentasDeCaja, escucharCobrosDeCaja, calcularTotales, refCajaActual,
-  METODOS, NOMBRES_METODO, encabezadoTicket
+  METODOS, NOMBRES_METODO, encabezadoTicket, escucharEgresosDeCaja, calcularEgresos
 } from "./comun.js";
 
 // Elementos
@@ -32,6 +32,8 @@ const kpiInicial = document.getElementById("kpiInicial");
 const kpiEsperado = document.getElementById("kpiEsperado");
 const resumenMetodos = document.getElementById("resumenMetodos");
 const resumenCreditos = document.getElementById("resumenCreditos");
+const resumenEgresos = document.getElementById("resumenEgresos");
+const tablaEgresos = document.getElementById("tablaEgresos");
 const formCierre = document.getElementById("formCierre");
 const inContado = document.getElementById("efectivoContado");
 const inObservacion = document.getElementById("observacion");
@@ -48,6 +50,9 @@ let dejarDeEscucharVentas = null;
 let dejarDeEscucharCobros = null;
 let ventasTurno = [];             // ventas de la caja abierta
 let cobrosTurno = [];             // cobros de créditos en la caja abierta
+let dejarDeEscucharEgresos = null;
+let egresosTurno = [];            // compras de insumos / pagos a trabajadores con efectivo de caja
+let totalesEgresos = calcularEgresos([]);
 let historial = [];
 let ultimoCierre = null;          // para imprimir desde el modal
 
@@ -64,8 +69,10 @@ function alCambiarCaja(cierre) {
   cajaAbierta = cierre;
   if (dejarDeEscucharVentas) { dejarDeEscucharVentas(); dejarDeEscucharVentas = null; }
   if (dejarDeEscucharCobros) { dejarDeEscucharCobros(); dejarDeEscucharCobros = null; }
+  if (dejarDeEscucharEgresos) { dejarDeEscucharEgresos(); dejarDeEscucharEgresos = null; }
   ventasTurno = [];
   cobrosTurno = [];
+  egresosTurno = [];
 
   if (!cierre) {
     estadoCaja.innerHTML = '<span class="etiqueta-estado rojo">Caja cerrada</span>';
@@ -90,16 +97,26 @@ function alCambiarCaja(cierre) {
     cobrosTurno = cobros;
     recalcular();
   });
+  dejarDeEscucharEgresos = escucharEgresosDeCaja(cierre.id, (egresos) => {
+    egresosTurno = egresos.sort((a, b) => (a.fecha?.toMillis?.() || 0) - (b.fecha?.toMillis?.() || 0));
+    recalcular();
+  });
 }
 
 function recalcular() {
   totalesTurno = calcularTotales(ventasTurno, cobrosTurno);
+  totalesEgresos = calcularEgresos(egresosTurno);
   dibujarResumen();
 }
 
+/**
+ * Efectivo esperado = monto inicial + ventas en efectivo + cobros de créditos
+ * en efectivo − egresos pagados con efectivo de la caja.
+ * (porMetodo.efectivo ya incluye ventas y cobros en efectivo)
+ */
 function efectivoEsperado() {
   if (!cajaAbierta) return 0;
-  return redondear((Number(cajaAbierta.montoInicial) || 0) + totalesTurno.porMetodo.efectivo);
+  return redondear((Number(cajaAbierta.montoInicial) || 0) + totalesTurno.porMetodo.efectivo - totalesEgresos.total);
 }
 
 function dibujarResumen() {
@@ -131,6 +148,27 @@ function dibujarResumen() {
         <div class="rotulo">Cobros · ${NOMBRES_METODO[m]}</div>
         <div class="valor">${soles(cb.porMetodo[m])}</div>
       </div>`).join("")}`;
+
+  // Egresos: salen del efectivo de la caja
+  const eg = totalesEgresos;
+  resumenEgresos.innerHTML = `
+    <div class="indicador ${eg.total > 0 ? "egreso" : ""}">
+      <div class="rotulo">Total egresos (efectivo)</div>
+      <div class="valor">− ${soles(eg.total)}</div>
+      <small>${eg.cantidad} egreso(s) · se restan del efectivo esperado</small>
+    </div>
+    <div class="indicador"><div class="rotulo">Compras de insumos</div><div class="valor">${soles(eg.insumos)}</div></div>
+    <div class="indicador"><div class="rotulo">Pagos a trabajadores</div><div class="valor">${soles(eg.trabajadores)}</div></div>`;
+  tablaEgresos.innerHTML = egresosTurno.length
+    ? egresosTurno.map((e) => `
+        <tr>
+          <td>${fechaHora(e.fecha)}</td>
+          <td>${e.tipo === "insumo" ? "Insumo" : "Trabajador"}</td>
+          <td>${escaparHTML(e.descripcion)}</td>
+          <td class="num">${soles(e.monto)}</td>
+          <td>${escaparHTML(e.usuarioNombre || "")}</td>
+        </tr>`).join("")
+    : '<tr><td colspan="5" class="vacio">Sin egresos en este turno.</td></tr>';
   actualizarDiferencia();
 }
 
@@ -199,7 +237,7 @@ function actualizarDiferencia() {
   const info = describirDiferencia(dif);
   cajaDiferencia.textContent = info.texto;
   cajaDiferencia.classList.add(info.clase);
-  textoDiferencia.textContent = `Esperado: ${soles(efectivoEsperado())} (monto inicial + ventas y cobros en efectivo).`;
+  textoDiferencia.textContent = `Esperado: ${soles(efectivoEsperado())} (monto inicial + ventas y cobros en efectivo − egresos).`;
 }
 
 function describirDiferencia(dif) {
@@ -227,16 +265,20 @@ formCierre.addEventListener("submit", async (e) => {
   btnCerrar.disabled = true;
   try {
     // Recalcular con datos frescos del servidor (no solo los de pantalla)
-    const [snapVentas, snapCobros] = await Promise.all([
+    const [snapVentas, snapCobros, snapEgresos] = await Promise.all([
       getDocs(query(collection(db, "ventas"), where("cierreId", "==", cierreId))),
-      getDocs(query(collection(db, "cobros"), where("cierreId", "==", cierreId)))
+      getDocs(query(collection(db, "cobros"), where("cierreId", "==", cierreId))),
+      getDocs(query(collection(db, "egresos"), where("cierreId", "==", cierreId)))
     ]);
     const totales = calcularTotales(
       snapVentas.docs.map((d) => d.data()),
       snapCobros.docs.map((d) => d.data())
     );
-    // Efectivo esperado: inicial + ventas en efectivo + cobros de créditos en efectivo
-    const esperado = redondear(montoInicial + totales.porMetodo.efectivo);
+    const listaEgresos = snapEgresos.docs.map((d) => d.data())
+      .sort((a, b) => (a.fecha?.toMillis?.() || 0) - (b.fecha?.toMillis?.() || 0));
+    const egresos = calcularEgresos(listaEgresos);
+    // Efectivo esperado: inicial + ventas y cobros en efectivo − egresos en efectivo
+    const esperado = redondear(montoInicial + totales.porMetodo.efectivo - egresos.total);
     const datosCierre = {
       estado: "cerrada",
       fechaCierre: serverTimestamp(),
@@ -248,6 +290,18 @@ formCierre.addEventListener("submit", async (e) => {
         total: totales.cobros.total,
         cantidad: totales.cobros.cantidad,
         ...totales.cobros.porMetodo
+      },
+      egresos: {                                      // salieron del efectivo de la caja
+        total: egresos.total,
+        cantidad: egresos.cantidad,
+        insumos: egresos.insumos,
+        trabajadores: egresos.trabajadores,
+        detalle: listaEgresos.map((e) => ({
+          tipo: e.tipo,
+          descripcion: e.descripcion,
+          monto: Number(e.monto) || 0,
+          usuarioNombre: e.usuarioNombre || ""
+        }))
       },
       efectivoEsperado: esperado,
       efectivoContado: contado,
@@ -291,6 +345,7 @@ function mostrarModalCerrada(c) {
     <dt>N.º de ventas</dt><dd>${c.numVentas}</dd>
     <dt>Cobros de créditos (incluidos)</dt><dd>${soles(c.cobrosCreditos?.total)}</dd>
     <dt>Créditos otorgados (informativo)</dt><dd>${c.creditosOtorgados?.cantidad ?? 0} · ${soles(c.creditosOtorgados?.monto)}</dd>
+    <dt>Egresos en efectivo</dt><dd>− ${soles(c.egresos?.total)}</dd>
     <dt>Efectivo esperado</dt><dd>${soles(c.efectivoEsperado)}</dd>
     <dt>Efectivo contado</dt><dd>${soles(c.efectivoContado)}</dd>
     <dt>Diferencia</dt><dd><span class="diferencia ${info.clase}" style="font-size:1rem;padding:.2em .6em">${info.texto}</span></dd>`;
@@ -354,6 +409,7 @@ function htmlReporteCierre(c) {
   const pm = c.totalPorMetodo || {};
   const cb = c.cobrosCreditos || {};
   const co = c.creditosOtorgados || {};
+  const eg = c.egresos || {};   // cierres antiguos no tienen egresos
   const info = describirDiferencia(Number(c.diferencia) || 0);
   return `
     <div class="ticket">
@@ -384,9 +440,20 @@ function htmlReporteCierre(c) {
         <tr><td>Monto fiado</td><td class="num">${soles(co.monto)}</td></tr>
       </table>
       <hr>
+      <p><strong>EGRESOS</strong> (pagados con efectivo de caja)</p>
+      <table>
+        ${(eg.detalle || []).map((e) => `
+          <tr><td>${escaparHTML(e.descripcion)}</td><td class="num">${soles(e.monto)}</td></tr>`).join("")
+          || '<tr><td colspan="2">Sin egresos</td></tr>'}
+        <tr><td>Insumos</td><td class="num">${soles(eg.insumos)}</td></tr>
+        <tr><td>Trabajadores</td><td class="num">${soles(eg.trabajadores)}</td></tr>
+        <tr class="total"><td>Total egresos</td><td class="num">${soles(eg.total)}</td></tr>
+      </table>
+      <hr>
       <table>
         <tr><td>Monto inicial</td><td class="num">${soles(c.montoInicial)}</td></tr>
         <tr><td>+ Efectivo cobrado</td><td class="num">${soles(pm.efectivo)}</td></tr>
+        <tr><td>− Egresos</td><td class="num">${soles(eg.total)}</td></tr>
         <tr><td>Efectivo esperado</td><td class="num">${soles(c.efectivoEsperado)}</td></tr>
         <tr><td>Efectivo contado</td><td class="num">${soles(c.efectivoContado)}</td></tr>
         <tr class="total"><td>Diferencia</td><td class="num">${info.corto}</td></tr>

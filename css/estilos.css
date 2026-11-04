@@ -619,3 +619,7 @@ dialog.modal-ancho { width: min(900px, calc(100vw - 2rem)); }
   .barra-usuario { justify-content: space-between; }
   .barra-nombre { text-align: left; }
 }
+
+/* ---------- 17. Egresos en caja ---------- */
+.indicador.egreso { background: var(--rojo-claro); border-color: var(--rojo); }
+.indicador.egreso .valor { color: var(--rojo-oscuro); }
