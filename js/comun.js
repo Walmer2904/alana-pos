@@ -98,6 +98,7 @@ const MENU = [
   { href: "caja.html", texto: "Caja", soloAdmin: false },
   { href: "productos.html", texto: "Productos", soloAdmin: true },
   { href: "insumos.html", texto: "Insumos", soloAdmin: true },
+  { href: "trabajadores.html", texto: "Trabajadores", soloAdmin: true },
   { href: "reportes.html", texto: "Reportes", soloAdmin: true }
 ];
 

@@ -100,6 +100,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Trabajadores: solo admin, DNI válido. Se desactivan, no se borran.
+    match /trabajadores/{id} {
+      allow read: if esAdmin();
+      allow create, update: if esAdmin() && dniOk(request.resource.data.dni);
+      allow delete: if false;
+    }
+
+    // Pagos a trabajadores: historial, nunca se borra.
+    match /pagosTrabajadores/{id} {
+      allow read, create, update: if esAdmin();
+      allow delete: if false;
+    }
+
     // Egresos de caja (compras de insumos y pagos a trabajadores pagados con
     // efectivo de la caja). Los lee cualquier usuario logueado porque la Caja
     // la usa también el cajero; solo el admin los crea; nunca se modifican ni borran.

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALANA POS · Trabajadores</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Kaushan+Script&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+  <link rel="icon" type="image/png" sizes="32x32" href="img/iconos/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="img/iconos/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#141414">
+</head>
+<body class="cargando">
+  <div class="pantalla-carga"><img src="img/logo.png" alt="Cargando ALANA"></div>
+  <header class="barra" id="barra"></header>
+
+  <main class="contenido">
+    <div class="encabezado-pagina">
+      <h1>Trabajadores</h1>
+      <button class="btn btn-primario" id="btnNuevo">+ Nuevo trabajador</button>
+    </div>
+
+    <div class="indicadores">
+      <div class="indicador destacado"><div class="rotulo" id="rotuloMes">Pagado este mes</div><div class="valor" id="kpiMes">S/ 0.00</div></div>
+      <div class="indicador"><div class="rotulo">Trabajadores activos</div><div class="valor" id="kpiActivos">0</div></div>
+    </div>
+
+    <section class="tarjeta" aria-labelledby="tituloLista">
+      <h2 id="tituloLista">Trabajadores</h2>
+      <label class="interruptor">
+        <input type="checkbox" id="verInactivos"> Mostrar inactivos
+      </label>
+      <div class="tabla-contenedor">
+        <table class="tabla">
+          <thead>
+            <tr>
+              <th>Trabajador</th>
+              <th>DNI</th>
+              <th>Pago</th>
+              <th class="num">Monto acordado</th>
+              <th class="num">Pagado este mes</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tablaTrabajadores">
+            <tr><td colspan="7" class="vacio">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal: agregar / editar trabajador -->
+  <dialog class="modal" id="modalTrabajador" aria-labelledby="tituloTrabajador">
+    <div class="modal-cabecera">
+      <h2 id="tituloTrabajador">Nuevo trabajador</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalTrabajador" aria-label="Cerrar">✕</button>
+    </div>
+    <form class="modal-cuerpo" id="formTrabajador" novalidate>
+      <div class="campo">
+        <label for="trNombre">Nombre completo</label>
+        <input type="text" id="trNombre" maxlength="80" required>
+      </div>
+      <div class="cuadricula-2" style="gap:.75rem">
+        <div class="campo">
+          <label for="trDni">DNI <small class="contador-dni" id="contadorDniTr" aria-live="polite">0/8</small></label>
+          <input type="text" id="trDni" inputmode="numeric" maxlength="8" pattern="[0-9]{8}" placeholder="8 números">
+        </div>
+        <div class="campo">
+          <label for="trCargo">Cargo</label>
+          <input type="text" id="trCargo" maxlength="40" placeholder="Ej.: Cocinero, Ayudante">
+        </div>
+        <div class="campo">
+          <label for="trTipoPago">Tipo de pago</label>
+          <select id="trTipoPago">
+            <option value="diario">Diario</option>
+            <option value="semanal" selected>Semanal</option>
+            <option value="quincenal">Quincenal</option>
+            <option value="mensual">Mensual</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="trMonto">Monto acordado (S/)</label>
+          <input type="number" id="trMonto" min="0" step="0.10" inputmode="decimal">
+        </div>
+        <div class="campo">
+          <label for="trIngreso">Fecha de ingreso</label>
+          <input type="date" id="trIngreso">
+        </div>
+      </div>
+      <label class="interruptor"><input type="checkbox" id="trActivo" checked> Activo</label>
+      <div id="errorTrabajador" class="mensaje-error oculto" role="alert"></div>
+      <div class="modal-acciones">
+        <button type="submit" class="btn btn-primario btn-grande" id="btnGuardarTrabajador">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: registrar pago -->
+  <dialog class="modal" id="modalPago" aria-labelledby="tituloPago">
+    <div class="modal-cabecera">
+      <h2 id="tituloPago">Registrar pago</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalPago" aria-label="Cerrar">✕</button>
+    </div>
+    <form class="modal-cuerpo" id="formPago" novalidate>
+      <p id="pagoInfo" style="margin-top:0;font-weight:700"></p>
+      <div class="cuadricula-2" style="gap:.75rem">
+        <div class="campo">
+          <label for="pgMonto">Monto (S/)</label>
+          <input type="number" id="pgMonto" class="monto-grande" min="0" step="0.10" inputmode="decimal">
+        </div>
+        <div class="campo">
+          <label for="pgConcepto">Concepto</label>
+          <select id="pgConcepto">
+            <option value="sueldo">Sueldo</option>
+            <option value="adelanto">Adelanto</option>
+            <option value="bono">Bono</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="pgPeriodo">Periodo</label>
+          <input type="text" id="pgPeriodo" maxlength="60">
+        </div>
+        <div class="campo">
+          <label for="pgMetodo">Método</label>
+          <select id="pgMetodo">
+            <option value="efectivo">Efectivo</option>
+            <option value="yape">Yape</option>
+            <option value="plin">Plin</option>
+            <option value="transferencia">Transferencia</option>
+          </select>
+        </div>
+      </div>
+      <div class="campo">
+        <label for="pgObservacion">Observación (opcional)</label>
+        <input type="text" id="pgObservacion" maxlength="150">
+      </div>
+      <label class="interruptor">
+        <input type="checkbox" id="pgCaja"> Pagado con efectivo de caja
+      </label>
+      <small class="texto-gris" id="pgCajaInfo"></small>
+      <div id="errorPago" class="mensaje-error oculto" role="alert" style="margin-top:1rem"></div>
+      <div class="modal-acciones">
+        <button type="submit" class="btn btn-primario btn-grande" id="btnGuardarPago">Registrar pago</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: pago registrado -->
+  <dialog class="modal modal-chico" id="modalPagoOk" aria-labelledby="tituloPagoOk">
+    <div class="modal-cabecera"><h2 id="tituloPagoOk">Pago registrado</h2></div>
+    <div class="modal-cuerpo">
+      <dl class="resumen-cierre" id="resumenPagoOk"></dl>
+      <div class="modal-acciones">
+        <button class="btn btn-acento" id="btnImprimirPago">Imprimir comprobante</button>
+        <button class="btn btn-primario" data-cerrar="modalPagoOk">Listo</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Modal: historial de pagos de un trabajador -->
+  <dialog class="modal modal-ancho" id="modalHistorial" aria-labelledby="tituloHistorial">
+    <div class="modal-cabecera">
+      <h2 id="tituloHistorial">Historial de pagos</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalHistorial" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-cuerpo">
+      <form class="rango-personalizado" id="formHistorial" novalidate style="margin-bottom:1rem">
+        <div class="campo">
+          <label for="histDesde">Desde</label>
+          <input type="date" id="histDesde" required>
+        </div>
+        <div class="campo">
+          <label for="histHasta">Hasta</label>
+          <input type="date" id="histHasta" required>
+        </div>
+        <button type="submit" class="btn btn-primario">Filtrar</button>
+      </form>
+      <p id="totalHistorial" style="font-weight:800"></p>
+      <div class="tabla-contenedor">
+        <table class="tabla">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Concepto</th>
+              <th>Periodo</th>
+              <th>Método</th>
+              <th class="num">Monto</th>
+              <th>Registró</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tablaHistorial"></tbody>
+        </table>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/trabajadores.js"></script>
+</body>
+</html>
