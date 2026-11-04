@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALANA POS · Iniciar sesión</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <main class="login">
+    <section class="login-marca" aria-label="Marca">
+      <h1 class="marca">ALANA</h1>
+      <p class="lema">Sistema de ventas · Punto de venta</p>
+    </section>
+
+    <section class="login-form-zona">
+      <form class="login-form" id="formLogin" novalidate>
+        <h2>Iniciar sesión</h2>
+        <p class="texto-gris">Ingresa con el correo y contraseña que te dio el administrador.</p>
+
+        <div id="errorLogin" class="mensaje-error oculto" role="alert"></div>
+
+        <div class="campo">
+          <label for="correo">Correo</label>
+          <input type="email" id="correo" autocomplete="username" required autofocus>
+        </div>
+        <div class="campo">
+          <label for="clave">Contraseña</label>
+          <input type="password" id="clave" autocomplete="current-password" required>
+        </div>
+
+        <button type="submit" class="btn btn-primario btn-grande" id="btnIngresar">Ingresar</button>
+      </form>
+    </section>
+  </main>
+
+  <script type="module" src="js/login.js"></script>
+</body>
+</html>
