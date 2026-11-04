@@ -103,8 +103,8 @@
       <div id="zonaCredito" class="oculto">
         <div class="cuadricula-2" style="gap:.75rem">
           <div class="campo">
-            <label for="dniCliente">DNI del cliente</label>
-            <input type="text" id="dniCliente" inputmode="numeric" maxlength="8" pattern="\d{8}" autocomplete="off" placeholder="8 dígitos">
+            <label for="dniCliente">DNI del cliente <small class="contador-dni" id="contadorDni" aria-live="polite">0/8</small></label>
+            <input type="text" id="dniCliente" inputmode="numeric" maxlength="8" pattern="[0-9]{8}" autocomplete="off" placeholder="8 números">
           </div>
           <div class="campo">
             <label for="nombreCliente">Nombre completo</label>

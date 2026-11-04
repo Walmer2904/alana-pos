@@ -19,6 +19,14 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin';
     }
 
+    // DNI válido: exactamente 8 números y no todos iguales (00000000, 11111111…).
+    function dniOk(dni) {
+      return dni is string
+        && dni.matches('^[0-9]{8}$')
+        && !(dni in ['00000000', '11111111', '22222222', '33333333', '44444444',
+                     '55555555', '66666666', '77777777', '88888888', '99999999']);
+    }
+
     // Perfiles: cada uno lee el suyo; el admin lee todos.
     // Se crean/editan solo desde la consola de Firebase.
     match /usuarios/{uid} {
@@ -55,14 +63,22 @@ service cloud.firestore {
 
     // Créditos (ventas fiadas): son el respaldo ante reclamos, NUNCA se borran.
     // Pagados y anulados solo cambian de estado.
+    // Al crear se exige DNI válido. Al actualizar (pagos, anulación) se acepta
+    // si el DNI no cambia, para no bloquear créditos antiguos.
     match /creditos/{id} {
-      allow read, create, update: if logueado();
+      allow read: if logueado();
+      allow create: if logueado() && dniOk(request.resource.data.dni);
+      allow update: if logueado()
+        && (request.resource.data.dni == resource.data.dni || dniOk(request.resource.data.dni));
       allow delete: if false;
     }
 
-    // Clientes (ID del documento = DNI). Nunca se borran.
+    // Clientes (ID del documento = DNI válido). Nunca se borran.
     match /clientes/{dni} {
-      allow read, create, update: if logueado();
+      allow read: if logueado();
+      allow create, update: if logueado()
+        && dniOk(request.resource.data.dni)
+        && request.resource.data.dni == dni;
       allow delete: if false;
     }
 

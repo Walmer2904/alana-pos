@@ -17,7 +17,7 @@ import {
   protegerPagina, soles, redondear, soloHora, fechaHora, escaparHTML, aviso,
   confirmar, mensajeError, abrirModal, cerrarModal, imprimirTicket,
   escucharCaja, escucharVentasDeCaja, refCajaActual, NOMBRES_METODO,
-  encabezadoTicket, dniValido, anularVentaCredito, mensajeAnulacion
+  encabezadoTicket, dniValido, errorDni, prepararCampoDni, anularVentaCredito, mensajeAnulacion
 } from "./comun.js";
 
 const MAX_VENTAS_LISTA = 30; // cuántas ventas del turno mostrar
@@ -243,6 +243,7 @@ btnCobrar.addEventListener("click", () => {
   cobroTotal.textContent = soles(total);
   inRecibido.value = "";
   inDni.value = "";
+  refrescarDni();
   inNombreCliente.value = "";
   infoCliente.classList.add("oculto");
   dniConsultado = "";
@@ -315,11 +316,10 @@ function actualizarVuelto() {
 // ------------------------------------------------------------
 // Datos del cliente (crédito): autocompletar nombre y mostrar deuda
 // ------------------------------------------------------------
-inDni.addEventListener("input", () => {
-  // Solo números, máximo 8
-  inDni.value = inDni.value.replace(/\D/g, "").slice(0, 8);
-  if (dniValido(inDni.value)) {
-    buscarCliente(inDni.value);
+// Solo números (también al pegar), máximo 8, con indicador "n/8"
+const refrescarDni = prepararCampoDni(inDni, document.getElementById("contadorDni"), (valor) => {
+  if (dniValido(valor)) {
+    buscarCliente(valor);
   } else {
     dniConsultado = "";
     infoCliente.classList.add("oculto");
@@ -391,9 +391,10 @@ formCobro.addEventListener("submit", async (e) => {
   if (esCredito) {
     dni = inDni.value.trim();
     nombreCliente = inNombreCliente.value.trim().replace(/\s+/g, " ");
-    if (!dniValido(dni)) {
+    const problemaDni = errorDni(dni);   // valida /^\d{8}$/ y que no sean todos iguales
+    if (problemaDni) {
       inDni.focus();
-      return mostrarErrorCobro("El DNI debe tener exactamente 8 dígitos numéricos.");
+      return mostrarErrorCobro(problemaDni);
     }
     if (nombreCliente.length < 3) {
       inNombreCliente.focus();

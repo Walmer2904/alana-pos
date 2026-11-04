@@ -23,6 +23,7 @@
       <div class="filtros" id="pestanas" role="group" aria-label="Vista" style="margin:0">
         <button type="button" class="chip" data-vista="pendientes" aria-pressed="true">Pendientes</button>
         <button type="button" class="chip" data-vista="historial" aria-pressed="false">Historial</button>
+        <button type="button" class="btn btn-claro btn-chico oculto" id="btnRevisarDni">Revisar DNIs inválidos</button>
       </div>
     </div>
 
@@ -48,6 +49,7 @@
         <div class="buscador">
           <label for="buscar" class="sr-only">Buscar por DNI o nombre</label>
           <input type="search" id="buscar" placeholder="Buscar por DNI o nombre del cliente…" autocomplete="off">
+          <small class="ayuda-dni oculto" id="ayudaBuscar" aria-live="polite"></small>
         </div>
         <div class="tabla-contenedor">
           <table class="tabla">
@@ -89,6 +91,7 @@
         <div class="buscador">
           <label for="buscarHist" class="sr-only">Buscar en historial por DNI o nombre</label>
           <input type="search" id="buscarHist" placeholder="Buscar por DNI o nombre…" autocomplete="off">
+          <small class="ayuda-dni oculto" id="ayudaBuscarHist" aria-live="polite"></small>
         </div>
         <div class="tabla-contenedor">
           <table class="tabla">
@@ -169,6 +172,15 @@
         <button class="btn btn-primario" data-cerrar="modalPagoOk">Listo</button>
       </div>
     </div>
+  </dialog>
+
+  <!-- Modal: revisión de DNIs inválidos (solo lectura, solo admin) -->
+  <dialog class="modal" id="modalRevisionDni" aria-labelledby="tituloRevisionDni">
+    <div class="modal-cabecera">
+      <h2 id="tituloRevisionDni">DNIs inválidos guardados</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalRevisionDni" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-cuerpo" id="cuerpoRevisionDni"></div>
   </dialog>
 
   <script type="module" src="js/creditos.js"></script>

@@ -575,3 +575,15 @@ dialog.modal[open] { animation: entrarModal .18s ease-out; }
 @media print {
   .indicador.informativo { border-style: dashed; }
 }
+
+/* ---------- 13. Indicador de DNI ---------- */
+.contador-dni {
+  display: inline-block; margin-left: .4rem; padding: 0 .5em; border-radius: 999px;
+  font-size: .8rem; font-weight: 800; background: var(--gris-claro); color: var(--gris);
+  font-variant-numeric: tabular-nums;
+}
+.contador-dni.ok { background: var(--verde-claro); color: var(--verde); }
+.contador-dni.error { background: var(--rojo-claro); color: var(--rojo-oscuro); }
+.ayuda-dni { display: block; margin-top: .35rem; font-weight: 700; color: var(--gris); }
+.ayuda-dni.ok { color: var(--verde); }
+.ayuda-dni.error { color: var(--rojo-oscuro); }

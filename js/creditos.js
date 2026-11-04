@@ -18,7 +18,7 @@ import {
   protegerPagina, soles, redondear, fechaHora, soloFecha, escaparHTML, aviso,
   confirmar, mensajeError, abrirModal, cerrarModal, imprimirTicket, escucharCaja,
   refCajaActual, NOMBRES_METODO, encabezadoTicket, claveDiaLima, inicioDiaLima,
-  sumarDias, anularVentaCredito, mensajeAnulacion
+  sumarDias, anularVentaCredito, mensajeAnulacion, dniValido, errorDni
 } from "./comun.js";
 
 const MS_DIA = 24 * 60 * 60 * 1000;
@@ -63,6 +63,7 @@ let ultimoComprobante = null; // datos para imprimir
 
 protegerPagina((u) => {
   usuario = u;
+  if (u.rol === "admin") document.getElementById("btnRevisarDni").classList.remove("oculto");
   escucharCaja((cierre) => {
     cajaAbierta = cierre;
     avisoSinCaja.classList.toggle("oculto", !!cierre);
@@ -141,7 +142,38 @@ function escucharPendientes() {
   });
 }
 
-inBuscar.addEventListener("input", dibujarPendientes);
+/**
+ * Si en un buscador se escribe (o pega) un DNI, se limpia igual que en los
+ * campos de DNI: solo números y máximo 8, con indicador "n/8".
+ * Si se escribe un nombre (con letras), se deja tal cual.
+ */
+function controlarBuscadorDni(input, ayuda) {
+  const valor = input.value;
+  if (/^[\d\s.-]+$/.test(valor)) {
+    const limpio = valor.replace(/\D/g, "").slice(0, 8);
+    if (limpio !== valor) input.value = limpio;
+    ayuda.classList.remove("oculto");
+    if (limpio.length < 8) {
+      ayuda.className = "ayuda-dni";
+      ayuda.textContent = `DNI ${limpio.length}/8 · escribe los 8 números para ver la deuda exacta`;
+    } else if (dniValido(limpio)) {
+      ayuda.className = "ayuda-dni ok";
+      ayuda.textContent = "DNI 8/8";
+    } else {
+      ayuda.className = "ayuda-dni error";
+      ayuda.textContent = errorDni(limpio);
+    }
+  } else {
+    ayuda.classList.add("oculto");
+  }
+}
+
+const ayudaBuscar = document.getElementById("ayudaBuscar");
+const ayudaBuscarHist = document.getElementById("ayudaBuscarHist");
+inBuscar.addEventListener("input", () => {
+  controlarBuscadorDni(inBuscar, ayudaBuscar);
+  dibujarPendientes();
+});
 
 function dibujarPendientes() {
   const texto = inBuscar.value.trim();
@@ -477,7 +509,10 @@ formHistorial.addEventListener("submit", (e) => {
   e.preventDefault();
   cargarHistorial();
 });
-inBuscarHist.addEventListener("input", dibujarHistorial);
+inBuscarHist.addEventListener("input", () => {
+  controlarBuscadorDni(inBuscarHist, ayudaBuscarHist);
+  dibujarHistorial();
+});
 
 async function cargarHistorial() {
   const desde = inHistDesde.value;
@@ -532,6 +567,52 @@ tablaHistorial.addEventListener("click", (e) => {
 });
 tablaHistorial.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && e.target.matches("tr[data-ver]")) mostrarDetalle(e.target.dataset.ver);
+});
+
+// ------------------------------------------------------------
+// Revisión de DNIs inválidos ya guardados (solo admin, SOLO LECTURA)
+// ------------------------------------------------------------
+// Lista créditos y clientes cuyo DNI no tiene 8 números o tiene todos
+// los números iguales. No modifica ni borra nada.
+document.getElementById("btnRevisarDni").addEventListener("click", async () => {
+  const cuerpo = document.getElementById("cuerpoRevisionDni");
+  cuerpo.innerHTML = '<p class="vacio">Revisando créditos y clientes…</p>';
+  abrirModal("modalRevisionDni");
+  try {
+    const [snapCreditos, snapClientes] = await Promise.all([
+      getDocs(collection(db, "creditos")),
+      getDocs(collection(db, "clientes"))
+    ]);
+    const creditosMal = snapCreditos.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((c) => !dniValido(c.dni));
+    const clientesMal = snapClientes.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((c) => !dniValido(c.dni) || !dniValido(c.id));
+
+    cuerpo.innerHTML = `
+      <p>Se revisaron <strong>${snapCreditos.size}</strong> créditos y <strong>${snapClientes.size}</strong> clientes.
+      Esta revisión <strong>no modifica nada</strong>.</p>
+      <h3>Créditos con DNI inválido (${creditosMal.length})</h3>
+      ${creditosMal.length ? `
+        <div class="tabla-contenedor"><table class="tabla">
+          <thead><tr><th>Fecha</th><th>DNI guardado</th><th>Cliente</th><th>Estado</th><th class="num">Saldo</th><th>ID</th></tr></thead>
+          <tbody>${creditosMal.map((c) => `
+            <tr><td>${fechaHora(c.fecha)}</td><td><strong>${escaparHTML(c.dni ?? "(vacío)")}</strong></td>
+            <td>${escaparHTML(c.nombreCliente)}</td><td>${etiquetaEstado(c.estado)}</td>
+            <td class="num">${soles(c.saldoPendiente)}</td><td><small>${c.id}</small></td></tr>`).join("")}
+          </tbody></table></div>` : '<p class="vacio">Ninguno. ✔</p>'}
+      <h3 style="margin-top:1rem">Clientes con DNI inválido (${clientesMal.length})</h3>
+      ${clientesMal.length ? `
+        <div class="tabla-contenedor"><table class="tabla">
+          <thead><tr><th>ID del documento</th><th>DNI guardado</th><th>Nombre</th></tr></thead>
+          <tbody>${clientesMal.map((c) => `
+            <tr><td><strong>${escaparHTML(c.id)}</strong></td><td>${escaparHTML(c.dni ?? "(vacío)")}</td><td>${escaparHTML(c.nombre)}</td></tr>`).join("")}
+          </tbody></table></div>` : '<p class="vacio">Ninguno. ✔</p>'}`;
+  } catch (error) {
+    console.error(error);
+    cuerpo.innerHTML = `<p class="mensaje-error">No se pudo revisar: ${escaparHTML(mensajeError(error))}</p>`;
+  }
 });
 
 // ------------------------------------------------------------

@@ -485,7 +485,61 @@ export function mensajeAnulacion(error) {
   return mensajeError(error);
 }
 
-/** Valida DNI peruano: exactamente 8 dígitos. */
+// ------------------------------------------------------------
+// DNI: validación única para todo el sistema
+// ------------------------------------------------------------
+export const MENSAJE_DNI = "El DNI debe tener exactamente 8 números";
+export const MENSAJE_DNI_REPETIDO = "El DNI no puede tener todos los números iguales";
+
+/** DNI válido: exactamente 8 números y no todos iguales (00000000, 11111111…). */
 export function dniValido(dni) {
-  return /^\d{8}$/.test(String(dni || ""));
+  const s = String(dni ?? "");
+  return /^\d{8}$/.test(s) && !/^(\d)\1{7}$/.test(s);
+}
+
+/** Devuelve el mensaje de error del DNI, o "" si es válido. */
+export function errorDni(dni) {
+  const s = String(dni ?? "");
+  if (!/^\d{8}$/.test(s)) return MENSAJE_DNI;
+  if (/^(\d)\1{7}$/.test(s)) return MENSAJE_DNI_REPETIDO;
+  return "";
+}
+
+/**
+ * Prepara un campo de DNI: solo números (también al pegar), máximo 8,
+ * y un indicador "5/8" que se pone verde cuando el DNI es válido.
+ * @param {HTMLInputElement} input
+ * @param {HTMLElement|null} indicador  Elemento donde mostrar "n/8" (opcional).
+ * @param {(valor: string) => void} alCambiar  Se llama con el valor limpio (opcional).
+ * @returns {() => void}  Función para refrescar el indicador (útil tras limpiar el campo).
+ */
+export function prepararCampoDni(input, indicador = null, alCambiar = null) {
+  input.setAttribute("inputmode", "numeric");
+  input.setAttribute("maxlength", "8");
+  input.setAttribute("autocomplete", "off");
+
+  const actualizar = () => {
+    const limpio = input.value.replace(/\D/g, "").slice(0, 8);
+    if (limpio !== input.value) input.value = limpio;
+    if (indicador) {
+      indicador.textContent = `${limpio.length}/8`;
+      indicador.classList.toggle("ok", dniValido(limpio));
+      indicador.classList.toggle("error", limpio.length === 8 && !dniValido(limpio));
+    }
+    if (alCambiar) alCambiar(limpio);
+  };
+
+  input.addEventListener("input", actualizar);
+  // Al pegar: quitar todo lo que no sea número ANTES de recortar a 8
+  // (si no, maxlength cortaría textos como "DNI: 12345678").
+  input.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const pegado = (e.clipboardData?.getData("text") || "").replace(/\D/g, "");
+    const ini = input.selectionStart ?? input.value.length;
+    const fin = input.selectionEnd ?? input.value.length;
+    input.value = (input.value.slice(0, ini) + pegado + input.value.slice(fin)).replace(/\D/g, "").slice(0, 8);
+    actualizar();
+  });
+  actualizar();
+  return actualizar;
 }
