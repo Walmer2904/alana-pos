@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALANA POS · Insumos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Kaushan+Script&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+  <link rel="icon" type="image/png" sizes="32x32" href="img/iconos/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="img/iconos/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#141414">
+</head>
+<body class="cargando">
+  <div class="pantalla-carga"><img src="img/logo.png" alt="Cargando ALANA"></div>
+  <header class="barra" id="barra"></header>
+
+  <main class="contenido">
+    <div class="encabezado-pagina">
+      <h1>Insumos</h1>
+      <button class="btn btn-primario" id="btnNuevo">+ Nuevo insumo</button>
+    </div>
+
+    <div class="indicadores">
+      <div class="indicador destacado"><div class="rotulo">Valor del inventario</div><div class="valor" id="kpiValor">S/ 0.00</div></div>
+      <div class="indicador"><div class="rotulo">Insumos con stock bajo</div><div class="valor" id="kpiBajo">0</div></div>
+      <div class="indicador"><div class="rotulo">Insumos activos</div><div class="valor" id="kpiActivos">0</div></div>
+    </div>
+
+    <section class="tarjeta" aria-labelledby="tituloLista">
+      <h2 id="tituloLista">Inventario <span class="texto-gris" id="contador"></span></h2>
+      <p class="texto-gris" style="margin-top:0">El descuento de insumos es manual: registra las salidas (uso, merma o ajuste) cuando corresponda.</p>
+      <div class="filtros-reporte" style="margin-bottom:1rem">
+        <div class="buscador" style="flex:1;min-width:220px;margin:0">
+          <label for="buscar" class="sr-only">Buscar insumo</label>
+          <input type="search" id="buscar" placeholder="Buscar insumo por nombre…" autocomplete="off">
+        </div>
+        <label class="interruptor" style="margin:0">
+          <input type="checkbox" id="verInactivos"> Mostrar inactivos
+        </label>
+      </div>
+      <div class="tabla-contenedor">
+        <table class="tabla">
+          <thead>
+            <tr>
+              <th>Insumo</th>
+              <th class="num">Stock</th>
+              <th class="num">Costo unitario</th>
+              <th class="num">Valor del stock</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tablaInsumos">
+            <tr><td colspan="6" class="vacio">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal: agregar / editar insumo -->
+  <dialog class="modal" id="modalInsumo" aria-labelledby="tituloInsumo">
+    <div class="modal-cabecera">
+      <h2 id="tituloInsumo">Nuevo insumo</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalInsumo" aria-label="Cerrar">✕</button>
+    </div>
+    <form class="modal-cuerpo" id="formInsumo" novalidate>
+      <div class="campo">
+        <label for="insNombre">Nombre</label>
+        <input type="text" id="insNombre" maxlength="60" required>
+      </div>
+      <div class="cuadricula-2" style="gap:.75rem">
+        <div class="campo">
+          <label for="insUnidad">Unidad</label>
+          <select id="insUnidad">
+            <option value="kg">kg</option>
+            <option value="g">g</option>
+            <option value="l">l</option>
+            <option value="ml">ml</option>
+            <option value="unidad">unidad</option>
+            <option value="paquete">paquete</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="insMinimo">Stock mínimo</label>
+          <input type="number" id="insMinimo" min="0" step="0.001" inputmode="decimal" value="0">
+        </div>
+      </div>
+      <!-- Solo al crear: stock inicial y su costo -->
+      <div class="cuadricula-2" style="gap:.75rem" id="zonaInicial">
+        <div class="campo">
+          <label for="insStock">Stock inicial</label>
+          <input type="number" id="insStock" min="0" step="0.001" inputmode="decimal" value="0">
+        </div>
+        <div class="campo">
+          <label for="insCosto">Costo unitario (S/)</label>
+          <input type="number" id="insCosto" min="0" step="0.01" inputmode="decimal" value="0">
+        </div>
+      </div>
+      <p class="texto-gris oculto" id="notaEdicion">Para cambiar el stock o el costo usa "Compra" o "Salida/ajuste": así queda registrado en el historial.</p>
+      <label class="interruptor">
+        <input type="checkbox" id="insActivo" checked> Activo
+      </label>
+      <div id="errorInsumo" class="mensaje-error oculto" role="alert"></div>
+      <div class="modal-acciones">
+        <button type="submit" class="btn btn-primario btn-grande" id="btnGuardarInsumo">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: registrar compra -->
+  <dialog class="modal" id="modalCompra" aria-labelledby="tituloCompra">
+    <div class="modal-cabecera">
+      <h2 id="tituloCompra">Registrar compra</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalCompra" aria-label="Cerrar">✕</button>
+    </div>
+    <form class="modal-cuerpo" id="formCompra" novalidate>
+      <p id="compraInfo" style="margin-top:0;font-weight:700"></p>
+      <div class="cuadricula-2" style="gap:.75rem">
+        <div class="campo">
+          <label for="compraCantidad">Cantidad comprada <span id="compraUnidad"></span></label>
+          <input type="number" id="compraCantidad" class="monto-grande" min="0" step="0.001" inputmode="decimal">
+        </div>
+        <div class="campo">
+          <label for="compraTotal">Costo total pagado (S/)</label>
+          <input type="number" id="compraTotal" class="monto-grande" min="0" step="0.10" inputmode="decimal">
+        </div>
+      </div>
+      <div class="campo">
+        <label for="compraNota">Nota (opcional)</label>
+        <input type="text" id="compraNota" maxlength="120" placeholder="Ej.: proveedor, mercado">
+      </div>
+      <div id="compraPrevia" class="info-cliente oculto" aria-live="polite"></div>
+      <label class="interruptor" style="margin-top:1rem">
+        <input type="checkbox" id="compraCaja"> Pagado con efectivo de caja
+      </label>
+      <small class="texto-gris" id="compraCajaInfo"></small>
+      <div id="errorCompra" class="mensaje-error oculto" role="alert" style="margin-top:1rem"></div>
+      <div class="modal-acciones">
+        <button type="submit" class="btn btn-primario btn-grande" id="btnGuardarCompra">Registrar compra</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: registrar salida o ajuste -->
+  <dialog class="modal" id="modalSalida" aria-labelledby="tituloSalida">
+    <div class="modal-cabecera">
+      <h2 id="tituloSalida">Registrar salida o ajuste</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalSalida" aria-label="Cerrar">✕</button>
+    </div>
+    <form class="modal-cuerpo" id="formSalida" novalidate>
+      <p id="salidaInfo" style="margin-top:0;font-weight:700"></p>
+      <div class="cuadricula-2" style="gap:.75rem">
+        <div class="campo">
+          <label for="salidaMotivo">Motivo</label>
+          <select id="salidaMotivo">
+            <option value="uso">Uso</option>
+            <option value="merma">Merma</option>
+            <option value="ajuste de inventario">Ajuste de inventario</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="salidaCantidad">Cantidad que sale <span id="salidaUnidad"></span></label>
+          <input type="number" id="salidaCantidad" class="monto-grande" min="0" step="0.001" inputmode="decimal">
+        </div>
+      </div>
+      <div class="campo">
+        <label for="salidaNota">Nota (opcional)</label>
+        <input type="text" id="salidaNota" maxlength="120">
+      </div>
+      <div id="errorSalida" class="mensaje-error oculto" role="alert"></div>
+      <div class="modal-acciones">
+        <button type="submit" class="btn btn-primario btn-grande" id="btnGuardarSalida">Registrar salida</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: historial de movimientos de un insumo -->
+  <dialog class="modal modal-ancho" id="modalHistorial" aria-labelledby="tituloHistorial">
+    <div class="modal-cabecera">
+      <h2 id="tituloHistorial">Historial</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalHistorial" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-cuerpo">
+      <form class="rango-personalizado" id="formHistorial" novalidate style="margin-bottom:1rem">
+        <div class="campo">
+          <label for="histDesde">Desde</label>
+          <input type="date" id="histDesde" required>
+        </div>
+        <div class="campo">
+          <label for="histHasta">Hasta</label>
+          <input type="date" id="histHasta" required>
+        </div>
+        <button type="submit" class="btn btn-primario">Filtrar</button>
+      </form>
+      <div class="tabla-contenedor">
+        <table class="tabla">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Tipo</th>
+              <th class="num">Cantidad</th>
+              <th class="num">Costo total</th>
+              <th>Stock</th>
+              <th>Motivo</th>
+              <th>Usuario</th>
+            </tr>
+          </thead>
+          <tbody id="tablaHistorial"></tbody>
+        </table>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/insumos.js"></script>
+</body>
+</html>

@@ -88,5 +88,25 @@ service cloud.firestore {
       allow read, create: if logueado();
       allow update, delete: if esAdmin();
     }
+
+    // Inventario de insumos: solo admin.
+    match /insumos/{id} {
+      allow read, write: if esAdmin();
+    }
+
+    // Movimientos de insumos (compras, salidas, ajustes): historial, nunca se borra.
+    match /movimientosInsumos/{id} {
+      allow read, create, update: if esAdmin();
+      allow delete: if false;
+    }
+
+    // Egresos de caja (compras de insumos y pagos a trabajadores pagados con
+    // efectivo de la caja). Los lee cualquier usuario logueado porque la Caja
+    // la usa también el cajero; solo el admin los crea; nunca se modifican ni borran.
+    match /egresos/{id} {
+      allow read: if logueado();
+      allow create: if esAdmin();
+      allow update, delete: if false;
+    }
   }
 }

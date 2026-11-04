@@ -95,9 +95,10 @@ export async function cerrarSesion() {
 const MENU = [
   { href: "ventas.html", texto: "Ventas", soloAdmin: false },
   { href: "creditos.html", texto: "Créditos", soloAdmin: false },
+  { href: "caja.html", texto: "Caja", soloAdmin: false },
   { href: "productos.html", texto: "Productos", soloAdmin: true },
-  { href: "reportes.html", texto: "Reportes", soloAdmin: true },
-  { href: "caja.html", texto: "Caja", soloAdmin: false }
+  { href: "insumos.html", texto: "Insumos", soloAdmin: true },
+  { href: "reportes.html", texto: "Reportes", soloAdmin: true }
 ];
 
 function dibujarBarra(usuario) {
@@ -153,6 +154,18 @@ export function soles(monto) {
 /** Redondea a 2 decimales evitando errores de coma flotante. */
 export function redondear(monto) {
   return Math.round((Number(monto) + Number.EPSILON) * 100) / 100;
+}
+
+/** Redondea a N decimales (para cantidades de insumos como 1.250 kg). */
+export function redondearA(valor, decimales) {
+  const f = 10 ** decimales;
+  return Math.round((Number(valor) + Number.EPSILON) * f) / f;
+}
+
+/** 1.5 + "kg" -> "1.5 kg" (hasta 3 decimales, sin ceros de más). */
+export function cantidadConUnidad(cantidad, unidad = "") {
+  const n = new Intl.NumberFormat("es-PE", { maximumFractionDigits: 3 }).format(Number(cantidad) || 0);
+  return unidad ? `${n} ${unidad}` : n;
 }
 
 // ------------------------------------------------------------
@@ -483,6 +496,65 @@ export function mensajeAnulacion(error) {
   if (error.message === "TIENE_PAGOS") return "No se puede anular: este crédito ya tiene pagos registrados.";
   if (error.message === "YA_NO_PENDIENTE") return "Este crédito ya no está pendiente (fue pagado o anulado).";
   return mensajeError(error);
+}
+
+// ------------------------------------------------------------
+// Egresos de caja (compras de insumos y pagos a trabajadores)
+// ------------------------------------------------------------
+// "movimientosInsumos" y "pagosTrabajadores" son solo para admin, pero la
+// Caja la usa también el cajero. Por eso, cuando algo se paga con efectivo
+// de la caja, se crea ADEMÁS un documento en "egresos" (lectura para
+// cualquier usuario logueado) dentro de la misma transacción.
+
+/**
+ * Agrega a una transacción la verificación de caja abierta.
+ * Lanza Error("SIN_CAJA") si la caja indicada ya no está abierta.
+ */
+export async function verificarCajaEnTx(tx, cierreId) {
+  const cfg = await tx.get(refCajaActual());
+  if (!cfg.exists() || cfg.data().cierreId !== cierreId) throw new Error("SIN_CAJA");
+}
+
+/**
+ * Registra un egreso de caja dentro de una transacción (después de las lecturas).
+ * @param {object} datos  { tipo: "insumo"|"trabajador", descripcion, monto, cierreId, referenciaId, usuarioNombre }
+ */
+export function crearEgresoEnTx(tx, datos) {
+  tx.set(doc(collection(db, "egresos")), {
+    tipo: datos.tipo,
+    descripcion: datos.descripcion,
+    monto: redondear(datos.monto),
+    metodo: "efectivo",
+    fecha: serverTimestamp(),
+    cierreId: datos.cierreId,
+    referenciaId: datos.referenciaId,
+    usuarioNombre: datos.usuarioNombre
+  });
+}
+
+/** Escucha en tiempo real los egresos de una caja (consulta por un solo campo). */
+export function escucharEgresosDeCaja(cierreId, callback) {
+  const q = query(collection(db, "egresos"), where("cierreId", "==", cierreId));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })));
+  }, (error) => { console.error(error); aviso(mensajeError(error), "error"); });
+}
+
+/** Suma egresos: total, cantidad y por tipo. */
+export function calcularEgresos(egresos) {
+  let total = 0, insumos = 0, trabajadores = 0;
+  for (const e of egresos) {
+    const m = Number(e.monto) || 0;
+    total += m;
+    if (e.tipo === "insumo") insumos += m;
+    if (e.tipo === "trabajador") trabajadores += m;
+  }
+  return {
+    total: redondear(total),
+    cantidad: egresos.length,
+    insumos: redondear(insumos),
+    trabajadores: redondear(trabajadores)
+  };
 }
 
 // ------------------------------------------------------------
