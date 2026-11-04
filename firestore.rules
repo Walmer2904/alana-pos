@@ -1,0 +1,56 @@
+rules_version = '2';
+
+// ============================================================
+// Reglas de seguridad de Cloud Firestore — ALANA POS
+// Pegar completas en: Firebase > Firestore Database > Reglas > Publicar
+// ============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ¿Hay sesión iniciada?
+    function logueado() {
+      return request.auth != null;
+    }
+
+    // ¿El usuario logueado tiene rol "admin" en la colección usuarios?
+    function esAdmin() {
+      return logueado()
+        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid))
+        && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin';
+    }
+
+    // Perfiles: cada uno lee el suyo; el admin lee todos.
+    // Se crean/editan solo desde la consola de Firebase.
+    match /usuarios/{uid} {
+      allow read: if logueado() && (request.auth.uid == uid || esAdmin());
+      allow write: if false;
+    }
+
+    // Productos: todos los logueados leen; solo admin escribe.
+    match /productos/{id} {
+      allow read: if logueado();
+      allow write: if esAdmin();
+    }
+
+    // Ventas: logueados leen y crean; solo admin anula (update) o borra.
+    match /ventas/{id} {
+      allow read, create: if logueado();
+      allow update, delete: if esAdmin();
+    }
+
+    // Cierres de caja: logueados leen, abren (create) y cierran (update).
+    match /cierres/{id} {
+      allow read, create, update: if logueado();
+      allow delete: if esAdmin();
+    }
+
+    // NUEVO: config/cajaActual guarda el id de la caja abierta para que
+    // las 2 PCs compartan una sola caja. Cajeros y admin lo leen y lo
+    // actualizan al abrir/cerrar caja; nadie lo borra.
+    match /config/{id} {
+      allow read: if logueado();
+      allow create, update: if logueado();
+      allow delete: if false;
+    }
+  }
+}
