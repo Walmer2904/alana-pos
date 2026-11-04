@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALANA POS · Reportes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body class="cargando">
+  <div class="pantalla-carga">ALANA</div>
+  <header class="barra" id="barra"></header>
+
+  <main class="contenido">
+    <div class="encabezado-pagina">
+      <div>
+        <h1>Reportes</h1>
+        <p class="texto-gris" id="textoRango" style="margin:0"></p>
+      </div>
+      <div class="acciones-fila no-imprimir">
+        <button class="btn btn-mostaza" id="btnExcel" disabled>Exportar a Excel</button>
+        <button class="btn btn-claro" id="btnImprimir">Imprimir</button>
+      </div>
+    </div>
+
+    <!-- Filtros -->
+    <section class="tarjeta no-imprimir" aria-label="Filtros de fecha">
+      <div class="filtros-reporte">
+        <div class="filtros" id="filtrosRapidos" role="group" aria-label="Periodo" style="margin:0">
+          <button type="button" class="chip" data-periodo="hoy" aria-pressed="true">Hoy</button>
+          <button type="button" class="chip" data-periodo="semana" aria-pressed="false">Esta semana</button>
+          <button type="button" class="chip" data-periodo="mes" aria-pressed="false">Este mes</button>
+        </div>
+        <form class="rango-personalizado" id="formRango" novalidate>
+          <div class="campo">
+            <label for="desde">Desde</label>
+            <input type="date" id="desde" required>
+          </div>
+          <div class="campo">
+            <label for="hasta">Hasta</label>
+            <input type="date" id="hasta" required>
+          </div>
+          <button type="submit" class="btn btn-primario">Aplicar rango</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Indicadores -->
+    <section class="tarjeta" aria-labelledby="tituloResumen">
+      <h2 id="tituloResumen">Resumen</h2>
+      <div class="indicadores">
+        <div class="indicador destacado"><div class="rotulo">Total vendido</div><div class="valor" id="kpiTotal">S/ 0.00</div></div>
+        <div class="indicador"><div class="rotulo">N.º de ventas</div><div class="valor" id="kpiNum">0</div></div>
+        <div class="indicador"><div class="rotulo">Ticket promedio</div><div class="valor" id="kpiPromedio">S/ 0.00</div></div>
+        <div class="indicador"><div class="rotulo">Anuladas</div><div class="valor" id="kpiAnuladas">0</div></div>
+      </div>
+      <h3>Total por método de pago</h3>
+      <div class="metodos-resumen" id="resumenMetodos"></div>
+    </section>
+
+    <div class="cuadricula-2" style="margin-top:1rem">
+      <section class="tarjeta" aria-labelledby="tituloGrafico">
+        <h2 id="tituloGrafico">Ventas por día</h2>
+        <div class="grafico-contenedor"><canvas id="grafico" aria-label="Gráfico de barras de ventas por día" role="img"></canvas></div>
+      </section>
+
+      <section class="tarjeta" aria-labelledby="tituloTop" style="margin-top:0">
+        <h2 id="tituloTop">Productos más vendidos</h2>
+        <div class="tabla-contenedor">
+          <table class="tabla">
+            <thead><tr><th>#</th><th>Producto</th><th class="num">Cantidad</th><th class="num">Importe</th></tr></thead>
+            <tbody id="tablaTop"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="tarjeta" style="margin-top:1rem" aria-labelledby="tituloDetalle">
+      <h2 id="tituloDetalle">Detalle de ventas</h2>
+      <div class="tabla-contenedor">
+        <table class="tabla">
+          <thead>
+            <tr>
+              <th>Fecha y hora</th>
+              <th>Ticket</th>
+              <th>Detalle</th>
+              <th>Método</th>
+              <th class="num">Total</th>
+              <th>Atendió</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="tablaDetalle">
+            <tr><td colspan="7" class="vacio">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Librerías externas (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script type="module" src="js/reportes.js"></script>
+</body>
+</html>
