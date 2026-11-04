@@ -55,7 +55,7 @@
             <div class="vista-previa" id="vistaPrevia">Sin imagen</div>
             <label for="imagen" class="sr-only">Elegir imagen</label>
             <input type="file" id="imagen" accept="image/*">
-            <small id="infoImagen">Se reduce automáticamente a 400×400 px.</small>
+            <small id="infoImagen">Se reduce automáticamente a 250×250 px.</small>
             <button type="button" class="btn btn-claro btn-chico oculto" id="btnQuitarImagen">Quitar imagen</button>
           </div>
 
@@ -77,6 +77,8 @@
       <section class="tarjeta" aria-labelledby="tituloLista">
         <div class="encabezado-pagina">
           <h2 id="tituloLista">Lista <span class="texto-gris" id="contador"></span></h2>
+          <button type="button" class="btn btn-claro btn-chico" id="btnOptimizar"
+            title="Vuelve a comprimir las fotos guardadas a 250×250 px para gastar menos datos">Optimizar imágenes existentes</button>
         </div>
         <div class="buscador">
           <label for="buscar" class="sr-only">Buscar producto</label>

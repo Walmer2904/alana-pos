@@ -59,8 +59,11 @@ let movimientos = [];    // filas de la tabla detallada (ventas + cobros)
 let vendidosSinCosto = new Set();
 let grafico = null;
 
+// Para ahorrar lecturas del plan gratuito, los datos se cargan SOLO al
+// presionar "Generar reporte" (no al abrir la página ni al cambiar filtros).
 protegerPagina(() => {
-  aplicarPeriodo("hoy");
+  aplicarPeriodo("hoy");   // solo deja elegido "Hoy"; no consulta nada
+  tablaDetalle.innerHTML = '<tr><td colspan="7" class="vacio">Elige el periodo y presiona "Generar reporte".</td></tr>';
 }, true);
 
 // ------------------------------------------------------------
@@ -84,13 +87,36 @@ function calcularPeriodo(periodo) {
   return { desde: hoy, hasta: hoy };
 }
 
+/** Los botones Hoy / Semana / Mes solo llenan las fechas (no consultan). */
 function aplicarPeriodo(periodo) {
   marcarChip(periodo);
   const r = calcularPeriodo(periodo);
   inDesde.value = r.desde;
   inHasta.value = r.hasta;
-  cargar(r);
+  marcarPendiente();
 }
+
+/** Indica que los filtros cambiaron y falta presionar "Generar reporte". */
+function marcarPendiente() {
+  const r = { desde: inDesde.value, hasta: inHasta.value };
+  if (rango && r.desde === rango.desde && r.hasta === rango.hasta) {
+    textoRango.textContent = textoDelRango(rango);
+    return;
+  }
+  textoRango.textContent = rango
+    ? `Mostrando: ${textoDelRango(rango)} · cambiaste el periodo, presiona "Generar reporte"`
+    : "Sin generar · presiona \"Generar reporte\"";
+}
+
+function textoDelRango(r) {
+  return r.desde === r.hasta
+    ? `Día ${soloFecha(inicioDiaLima(r.desde))}`
+    : `Del ${soloFecha(inicioDiaLima(r.desde))} al ${soloFecha(inicioDiaLima(r.hasta))}`;
+}
+
+// Si se cambian las fechas a mano, se quita la marca del botón rápido
+inDesde.addEventListener("change", () => { marcarChip(null); marcarPendiente(); });
+inHasta.addEventListener("change", () => { marcarChip(null); marcarPendiente(); });
 
 function marcarChip(periodo) {
   filtrosRapidos.querySelectorAll(".chip").forEach((c) =>
@@ -103,14 +129,22 @@ filtrosRapidos.addEventListener("click", (e) => {
   if (btn) aplicarPeriodo(btn.dataset.periodo);
 });
 
-formRango.addEventListener("submit", (e) => {
+// Botón "Generar reporte": único lugar que consulta Firestore
+formRango.addEventListener("submit", async (e) => {
   e.preventDefault();
   const desde = inDesde.value;
   const hasta = inHasta.value;
   if (!desde || !hasta) return aviso("Elige las dos fechas del rango.", "error");
   if (desde > hasta) return aviso("La fecha \"Desde\" no puede ser mayor que \"Hasta\".", "error");
-  marcarChip(null);
-  cargar({ desde, hasta });
+  const btn = document.getElementById("btnGenerar");
+  btn.disabled = true;
+  btn.textContent = "Generando…";
+  try {
+    await cargar({ desde, hasta });
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Generar reporte";
+  }
 });
 
 ordenTop.addEventListener("click", (e) => {
@@ -138,9 +172,7 @@ function consultaPorFecha(coleccion, inicio, fin) {
 
 async function cargar(r) {
   rango = r;
-  textoRango.textContent = r.desde === r.hasta
-    ? `Día ${soloFecha(inicioDiaLima(r.desde))}`
-    : `Del ${soloFecha(inicioDiaLima(r.desde))} al ${soloFecha(inicioDiaLima(r.hasta))}`;
+  textoRango.textContent = textoDelRango(r);
   tablaDetalle.innerHTML = '<tr><td colspan="7" class="vacio">Cargando…</td></tr>';
   btnExcel.disabled = true;
 

@@ -15,6 +15,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import {
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   collection,
   doc,
   getDoc,
@@ -46,7 +49,25 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Firestore con CACHÉ PERSISTENTE (IndexedDB del navegador):
+// - Los documentos ya descargados (productos con sus imágenes, etc.) quedan
+//   guardados en la PC. Al cambiar de página, onSnapshot muestra primero lo
+//   guardado y el servidor solo envía lo que cambió, en vez de todo de nuevo.
+//   Esto ahorra lecturas del plan gratuito (Spark).
+// - persistentMultipleTabManager permite tener varias pestañas abiertas a la vez.
+// - Si el navegador no permite la caché (p. ej. ventana privada), se usa la
+//   configuración normal sin caché y el sistema funciona igual.
+function crearFirestore() {
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    });
+  } catch (error) {
+    console.warn("Caché persistente no disponible; se usa Firestore sin caché.", error);
+    return getFirestore(app);
+  }
+}
+export const db = crearFirestore();
 
 // Reexportamos las funciones que usan las páginas para no repetir URLs.
 export {
