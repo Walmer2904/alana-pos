@@ -486,6 +486,31 @@ export function mensajeAnulacion(error) {
 }
 
 // ------------------------------------------------------------
+// Costo de producción
+// ------------------------------------------------------------
+/** ¿El producto tiene costo de producción registrado? (los antiguos no lo tienen) */
+export function tieneCosto(producto) {
+  return typeof producto?.costo === "number" && Number.isFinite(producto.costo);
+}
+
+/** ¿El item de una venta/crédito guardó su costo? (ventas antiguas no lo tienen) */
+export function itemTieneCosto(item) {
+  return typeof item?.costoSubtotal === "number" && Number.isFinite(item.costoSubtotal);
+}
+
+/** Ganancia por unidad en S/ y en % sobre el precio de venta. */
+export function gananciaUnidad(precio, costo) {
+  const p = Number(precio) || 0;
+  const g = redondear(p - (Number(costo) || 0));
+  return { monto: g, porcentaje: p > 0 ? (g / p) * 100 : 0 };
+}
+
+/** 12.345 -> "12.3 %" */
+export function porcentaje(valor) {
+  return `${(Number(valor) || 0).toFixed(1)} %`;
+}
+
+// ------------------------------------------------------------
 // DNI: validación única para todo el sistema
 // ------------------------------------------------------------
 export const MENSAJE_DNI = "El DNI debe tener exactamente 8 números";

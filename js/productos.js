@@ -11,7 +11,8 @@ import {
   db, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp
 } from "./firebase.js";
 import {
-  protegerPagina, soles, redondear, escaparHTML, aviso, confirmar, mensajeError
+  protegerPagina, soles, redondear, escaparHTML, aviso, confirmar, mensajeError,
+  tieneCosto, gananciaUnidad, porcentaje
 } from "./comun.js";
 
 const TAM_MAX = 400;              // lado máximo en píxeles
@@ -22,6 +23,9 @@ const form = document.getElementById("formProducto");
 const tituloForm = document.getElementById("tituloForm");
 const inNombre = document.getElementById("nombre");
 const inPrecio = document.getElementById("precio");
+const inCosto = document.getElementById("costo");
+const infoGanancia = document.getElementById("infoGanancia");
+const bannerSinCosto = document.getElementById("bannerSinCosto");
 const inCategoria = document.getElementById("categoria");
 const inImagen = document.getElementById("imagen");
 const inActivo = document.getElementById("activo");
@@ -83,12 +87,25 @@ function dibujarTabla() {
 
   contador.textContent = `(${filtrados.length} de ${productos.length})`;
 
+  // Banner: productos sin costo (la ganancia en Reportes saldría inexacta)
+  const sinCosto = productos.filter((p) => !tieneCosto(p)).length;
+  bannerSinCosto.classList.toggle("oculto", sinCosto === 0);
+  bannerSinCosto.innerHTML = `<span>⚠ ${sinCosto} producto(s) no tienen costo de producción. La ganancia en Reportes saldrá inexacta hasta que lo registres (botón Editar).</span>`;
+
   if (filtrados.length === 0) {
-    tabla.innerHTML = `<tr><td colspan="6" class="vacio">${productos.length ? "Ningún producto coincide con la búsqueda." : "Aún no hay productos. Agrega el primero con el formulario."}</td></tr>`;
+    tabla.innerHTML = `<tr><td colspan="8" class="vacio">${productos.length ? "Ningún producto coincide con la búsqueda." : "Aún no hay productos. Agrega el primero con el formulario."}</td></tr>`;
     return;
   }
 
-  tabla.innerHTML = filtrados.map((p) => `
+  tabla.innerHTML = filtrados.map((p) => {
+    let costo = '<span class="etiqueta-estado amarillo">Falta costo</span>';
+    let ganancia = "—";
+    if (tieneCosto(p)) {
+      const g = gananciaUnidad(p.precio, p.costo);
+      costo = soles(p.costo);
+      ganancia = `<span class="${g.monto <= 0 ? "texto-perdida" : "texto-ganancia"}">${soles(g.monto)}<br><small>${porcentaje(g.porcentaje)}</small></span>`;
+    }
+    return `
     <tr>
       <td>${p.imagen
         ? `<img class="miniatura" src="${p.imagen}" alt="">`
@@ -96,6 +113,8 @@ function dibujarTabla() {
       <td><strong>${escaparHTML(p.nombre)}</strong></td>
       <td>${escaparHTML(p.categoria)}</td>
       <td class="num">${soles(p.precio)}</td>
+      <td class="num">${costo}</td>
+      <td class="num">${ganancia}</td>
       <td>${p.activo
         ? '<span class="etiqueta-estado verde">Activo</span>'
         : '<span class="etiqueta-estado">Inactivo</span>'}</td>
@@ -106,8 +125,30 @@ function dibujarTabla() {
           <button class="btn btn-peligro btn-chico" data-accion="eliminar" data-id="${p.id}">Eliminar</button>
         </div>
       </td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 }
+
+// Aviso en vivo de ganancia mientras se escribe precio/costo
+function actualizarInfoGanancia() {
+  const precio = parseFloat(inPrecio.value);
+  const costo = parseFloat(inCosto.value);
+  if (!Number.isFinite(precio) || !Number.isFinite(costo) || inCosto.value === "") {
+    infoGanancia.classList.add("oculto");
+    return;
+  }
+  const g = gananciaUnidad(precio, costo);
+  infoGanancia.classList.remove("oculto");
+  if (costo >= precio) {
+    infoGanancia.className = "info-ganancia perdida";
+    infoGanancia.textContent = "⚠ Este producto no deja ganancia";
+  } else {
+    infoGanancia.className = "info-ganancia";
+    infoGanancia.textContent = `Ganancia por unidad: ${soles(g.monto)} (${porcentaje(g.porcentaje)})`;
+  }
+}
+inPrecio.addEventListener("input", actualizarInfoGanancia);
+inCosto.addEventListener("input", actualizarInfoGanancia);
 
 inBuscar.addEventListener("input", dibujarTabla);
 
@@ -151,11 +192,13 @@ function cargarEnFormulario(p) {
   tituloForm.textContent = "Editar producto";
   inNombre.value = p.nombre || "";
   inPrecio.value = p.precio ?? "";
+  inCosto.value = tieneCosto(p) ? p.costo : "";
   inCategoria.value = p.categoria || "";
   inActivo.checked = !!p.activo;
   inImagen.value = "";
   imagenBase64 = p.imagen || "";
   mostrarVistaPrevia();
+  actualizarInfoGanancia();
   btnCancelar.classList.remove("oculto");
   btnGuardar.textContent = "Guardar cambios";
   ocultarError();
@@ -169,6 +212,7 @@ function limpiarFormulario() {
   inActivo.checked = true;
   imagenBase64 = "";
   mostrarVistaPrevia();
+  infoGanancia.classList.add("oculto");
   infoImagen.textContent = "Se reduce automáticamente a 400×400 px.";
   tituloForm.textContent = "Nuevo producto";
   btnGuardar.textContent = "Guardar producto";
@@ -271,11 +315,22 @@ form.addEventListener("submit", async (e) => {
 
   const nombre = inNombre.value.trim();
   const precio = redondear(parseFloat(inPrecio.value));
+  const costo = redondear(parseFloat(inCosto.value));
   const categoria = inCategoria.value.trim();
 
   if (!nombre) return mostrarError("Escribe el nombre del producto.", inNombre);
   if (!Number.isFinite(precio) || precio <= 0) return mostrarError("Escribe un precio válido mayor que 0.", inPrecio);
+  if (inCosto.value.trim() === "" || !Number.isFinite(costo) || costo < 0) {
+    return mostrarError("Escribe el costo de producción (0 o más).", inCosto);
+  }
   if (!categoria) return mostrarError("Escribe o elige una categoría.", inCategoria);
+  if (costo >= precio) {
+    const seguir = await confirmar(
+      `Este producto no deja ganancia: el costo (${soles(costo)}) es igual o mayor que el precio (${soles(precio)}). ¿Guardar de todos modos?`,
+      "Guardar igual"
+    );
+    if (!seguir) { inCosto.focus(); return; }
+  }
 
   const duplicado = productos.find((p) =>
     p.id !== editandoId && (p.nombre || "").trim().toLowerCase() === nombre.toLowerCase()
@@ -285,6 +340,7 @@ form.addEventListener("submit", async (e) => {
   const datos = {
     nombre,
     precio,
+    costo,
     categoria,
     imagen: imagenBase64,
     activo: inActivo.checked

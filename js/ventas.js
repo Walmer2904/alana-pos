@@ -17,7 +17,8 @@ import {
   protegerPagina, soles, redondear, soloHora, fechaHora, escaparHTML, aviso,
   confirmar, mensajeError, abrirModal, cerrarModal, imprimirTicket,
   escucharCaja, escucharVentasDeCaja, refCajaActual, NOMBRES_METODO,
-  encabezadoTicket, dniValido, errorDni, prepararCampoDni, anularVentaCredito, mensajeAnulacion
+  encabezadoTicket, dniValido, errorDni, prepararCampoDni, anularVentaCredito, mensajeAnulacion,
+  tieneCosto
 } from "./comun.js";
 
 const MAX_VENTAS_LISTA = 30; // cuántas ventas del turno mostrar
@@ -168,8 +169,15 @@ function agregarAlPedido(p) {
   if (item) {
     item.cantidad++;
   } else {
-    // Copiamos nombre y precio: si luego cambian, esta venta no se altera
-    pedido.set(p.id, { productoId: p.id, nombre: p.nombre, precio: Number(p.precio), cantidad: 1 });
+    // Copiamos nombre, precio y costo: si luego cambian, esta venta no se altera.
+    // costo = null si el producto aún no tiene costo registrado.
+    pedido.set(p.id, {
+      productoId: p.id,
+      nombre: p.nombre,
+      precio: Number(p.precio),
+      costo: tieneCosto(p) ? p.costo : null,
+      cantidad: 1
+    });
   }
   dibujarPedido();
 }
@@ -408,7 +416,10 @@ formCobro.addEventListener("submit", async (e) => {
     nombre: it.nombre,
     precio: it.precio,
     cantidad: it.cantidad,
-    subtotal: redondear(it.precio * it.cantidad)
+    subtotal: redondear(it.precio * it.cantidad),
+    // Copia del costo de producción (null = el producto no tenía costo)
+    costoUnitario: it.costo,
+    costoSubtotal: it.costo === null ? null : redondear(it.costo * it.cantidad)
   }));
 
   const ventaRef = doc(collection(db, "ventas"));

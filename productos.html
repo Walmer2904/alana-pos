@@ -22,6 +22,9 @@
       <h1>Productos</h1>
     </div>
 
+    <!-- Aviso: productos sin costo de producción -->
+    <div class="alerta alerta-aviso oculto" id="bannerSinCosto" role="status"></div>
+
     <div class="productos-layout">
       <!-- Formulario de alta / edición -->
       <section class="tarjeta" aria-labelledby="tituloForm">
@@ -32,8 +35,14 @@
             <input type="text" id="nombre" maxlength="60" required>
           </div>
           <div class="campo">
-            <label for="precio">Precio (S/)</label>
+            <label for="precio">Precio de venta (S/)</label>
             <input type="number" id="precio" min="0" step="0.10" inputmode="decimal" required>
+          </div>
+          <div class="campo">
+            <label for="costo">Costo de producción (S/)</label>
+            <input type="number" id="costo" min="0" step="0.10" inputmode="decimal" required>
+            <small>Lo que cuesta preparar una unidad (insumos, empaque, etc.).</small>
+            <div id="infoGanancia" class="info-ganancia oculto" aria-live="polite"></div>
           </div>
           <div class="campo">
             <label for="categoria">Categoría</label>
@@ -81,12 +90,14 @@
                 <th>Nombre</th>
                 <th>Categoría</th>
                 <th class="num">Precio</th>
+                <th class="num">Costo</th>
+                <th class="num">Ganancia</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
             </thead>
             <tbody id="tablaProductos">
-              <tr><td colspan="6" class="vacio">Cargando…</td></tr>
+              <tr><td colspan="8" class="vacio">Cargando…</td></tr>
             </tbody>
           </table>
         </div>

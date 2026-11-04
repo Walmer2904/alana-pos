@@ -587,3 +587,12 @@ dialog.modal[open] { animation: entrarModal .18s ease-out; }
 .ayuda-dni { display: block; margin-top: .35rem; font-weight: 700; color: var(--gris); }
 .ayuda-dni.ok { color: var(--verde); }
 .ayuda-dni.error { color: var(--rojo-oscuro); }
+
+/* ---------- 14. Costos y ganancia ---------- */
+.info-ganancia {
+  margin-top: .35rem; padding: .45rem .75rem; border-radius: var(--radio-chico);
+  font-weight: 800; background: var(--verde-claro); color: var(--verde);
+}
+.info-ganancia.perdida { background: var(--rojo-claro); color: var(--rojo-oscuro); }
+.texto-ganancia { color: var(--verde); font-weight: 800; }
+.texto-perdida { color: var(--rojo-oscuro); font-weight: 800; }
