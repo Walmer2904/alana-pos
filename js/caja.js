@@ -56,10 +56,15 @@ let totalesEgresos = calcularEgresos([]);
 let historial = [];
 let ultimoCierre = null;          // para imprimir desde el modal
 
+// El admin ve todo. El cajero hace CIERRE CIEGO: no ve montos del turno ni
+// el efectivo esperado hasta cerrar, y no ve el historial de cierres
+// (las reglas de Firestore tampoco le dejan leer cierres ya cerrados).
+const esAdmin = () => usuario?.rol === "admin";
+
 protegerPagina((u) => {
   usuario = u;
   escucharCaja(alCambiarCaja);
-  escucharHistorial();
+  if (esAdmin()) escucharHistorial();
 });
 
 // ------------------------------------------------------------
@@ -120,8 +125,10 @@ function efectivoEsperado() {
 }
 
 function dibujarResumen() {
-  kpiTotal.textContent = soles(totalesTurno.total);
   kpiNum.textContent = totalesTurno.numVentas;
+  // Cajero: los montos ni siquiera se escriben en la página (cierre ciego).
+  if (!esAdmin()) return;
+  kpiTotal.textContent = soles(totalesTurno.total);
   kpiEsperado.textContent = soles(efectivoEsperado());
   resumenMetodos.innerHTML = METODOS.map((m) => `
     <div class="indicador">
@@ -226,6 +233,7 @@ formApertura.addEventListener("submit", async (e) => {
 inContado.addEventListener("input", actualizarDiferencia);
 
 function actualizarDiferencia() {
+  if (!esAdmin()) return;   // cierre ciego: el cajero no ve la diferencia antes de cerrar
   const valor = inContado.value.trim();
   cajaDiferencia.className = "diferencia";
   if (valor === "") {
@@ -257,7 +265,11 @@ formCierre.addEventListener("submit", async (e) => {
     return;
   }
 
-  const ok = await confirmar("¿Cerrar la caja? Después ya no se podrá vender hasta abrir una nueva.", "Cerrar caja");
+  const ok = await confirmar(
+    esAdmin()
+      ? "¿Cerrar la caja? Después ya no se podrá vender hasta abrir una nueva."
+      : `Vas a declarar ${soles(contado)} de efectivo contado. Revisa bien: después de cerrar no se puede cambiar. ¿Cerrar la caja?`,
+    "Cerrar caja");
   if (!ok) return;
 
   const cierreId = cajaAbierta.id;
@@ -308,6 +320,7 @@ formCierre.addEventListener("submit", async (e) => {
       diferencia: redondear(contado - esperado),
       usuarioCierre: usuario.nombre,
       usuarioCierreId: usuario.uid,
+      rolCierre: usuario.rol,                         // "admin" o "cajero" (cierre ciego)
       observacion: inObservacion.value.trim()
     };
 
@@ -384,7 +397,7 @@ function dibujarHistorial() {
       <tr>
         <td>${fechaHora(c.fechaApertura)}</td>
         <td>${fechaHora(c.fechaCierre)}</td>
-        <td>${escaparHTML(c.usuarioCierre || "—")}</td>
+        <td>${escaparHTML(c.usuarioCierre || "—")}${c.rolCierre ? `<br><small class="texto-gris">${c.rolCierre === "admin" ? "Administrador" : "Cajero"}</small>` : ""}</td>
         <td class="num">${c.numVentas ?? 0}</td>
         <td class="num">${soles(c.totalVentas)}</td>
         <td class="num">${soles(c.efectivoEsperado)}</td>
@@ -419,7 +432,7 @@ function htmlReporteCierre(c) {
         <tr><td>Apertura:</td><td class="num">${fechaHora(c.fechaApertura)}</td></tr>
         <tr><td>Abrió:</td><td class="num">${escaparHTML(c.usuarioApertura || "—")}</td></tr>
         <tr><td>Cierre:</td><td class="num">${fechaHora(c.fechaCierre)}</td></tr>
-        <tr><td>Cerró:</td><td class="num">${escaparHTML(c.usuarioCierre || "—")}</td></tr>
+        <tr><td>Cerró:</td><td class="num">${escaparHTML(c.usuarioCierre || "—")}${c.rolCierre === "cajero" ? " (cajero, cierre ciego)" : ""}</td></tr>
       </table>
       <hr>
       <table>

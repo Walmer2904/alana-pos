@@ -42,24 +42,31 @@
         <h2 id="tituloResumen">Resumen del turno</h2>
         <p class="texto-gris" id="infoApertura"></p>
         <div class="indicadores">
-          <div class="indicador destacado"><div class="rotulo">Total vendido</div><div class="valor" id="kpiTotal">S/ 0.00</div></div>
+          <div class="indicador destacado solo-admin"><div class="rotulo">Total vendido</div><div class="valor" id="kpiTotal">S/ 0.00</div></div>
           <div class="indicador"><div class="rotulo">N.º de ventas</div><div class="valor" id="kpiNum">0</div></div>
           <div class="indicador"><div class="rotulo">Monto inicial</div><div class="valor" id="kpiInicial">S/ 0.00</div></div>
-          <div class="indicador"><div class="rotulo">Efectivo esperado</div><div class="valor" id="kpiEsperado">S/ 0.00</div></div>
+          <div class="indicador solo-admin"><div class="rotulo">Efectivo esperado</div><div class="valor" id="kpiEsperado">S/ 0.00</div></div>
         </div>
-        <h3>Total por método de pago</h3>
-        <div class="metodos-resumen" id="resumenMetodos"></div>
-        <h3 style="margin-top:1.1rem">Créditos del turno</h3>
-        <div class="indicadores" id="resumenCreditos" style="margin-bottom:0"></div>
+        <!-- Cierre ciego: el cajero no ve montos ni efectivo esperado hasta cerrar -->
+        <div class="alerta alerta-aviso solo-cajero" role="note">
+          <span><strong>Cierre ciego.</strong> Los montos del turno y el efectivo esperado se muestran
+          recién después de cerrar la caja. Al cerrar, cuenta el efectivo con calma e ingrésalo tal cual.</span>
+        </div>
+        <div class="solo-admin">
+          <h3>Total por método de pago</h3>
+          <div class="metodos-resumen" id="resumenMetodos"></div>
+          <h3 style="margin-top:1.1rem">Créditos del turno</h3>
+          <div class="indicadores" id="resumenCreditos" style="margin-bottom:0"></div>
 
-        <h3 style="margin-top:1.1rem">Egresos</h3>
-        <p class="texto-gris" style="margin-top:0">Compras de insumos y pagos a trabajadores pagados con efectivo de esta caja.</p>
-        <div class="indicadores" id="resumenEgresos"></div>
-        <div class="tabla-contenedor">
-          <table class="tabla">
-            <thead><tr><th>Hora</th><th>Tipo</th><th>Detalle</th><th class="num">Monto</th><th>Registró</th></tr></thead>
-            <tbody id="tablaEgresos"><tr><td colspan="5" class="vacio">Sin egresos en este turno.</td></tr></tbody>
-          </table>
+          <h3 style="margin-top:1.1rem">Egresos</h3>
+          <p class="texto-gris" style="margin-top:0">Compras de insumos y pagos a trabajadores pagados con efectivo de esta caja.</p>
+          <div class="indicadores" id="resumenEgresos"></div>
+          <div class="tabla-contenedor">
+            <table class="tabla">
+              <thead><tr><th>Hora</th><th>Tipo</th><th>Detalle</th><th class="num">Monto</th><th>Registró</th></tr></thead>
+              <tbody id="tablaEgresos"><tr><td colspan="5" class="vacio">Sin egresos en este turno.</td></tr></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -78,17 +85,21 @@
             </div>
           </div>
           <div>
-            <span class="etiqueta">Diferencia</span>
-            <div class="diferencia" id="diferencia" aria-live="polite">—</div>
-            <p class="texto-gris" id="textoDiferencia"></p>
+            <div class="solo-admin">
+              <span class="etiqueta">Diferencia</span>
+              <div class="diferencia" id="diferencia" aria-live="polite">—</div>
+              <p class="texto-gris" id="textoDiferencia"></p>
+            </div>
+            <p class="texto-gris solo-cajero">Ingresa el efectivo contado. La diferencia con lo esperado
+              se muestra después de confirmar el cierre.</p>
             <button type="submit" class="btn btn-primario btn-grande" id="btnCerrar">Cerrar caja</button>
           </div>
         </form>
       </section>
     </div>
 
-    <!-- Historial -->
-    <section class="tarjeta" aria-labelledby="tituloHistorial">
+    <!-- Historial (solo admin) -->
+    <section class="tarjeta solo-admin" aria-labelledby="tituloHistorial">
       <h2 id="tituloHistorial">Historial de cierres</h2>
       <div class="tabla-contenedor">
         <table class="tabla">

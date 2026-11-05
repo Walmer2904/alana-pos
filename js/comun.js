@@ -40,15 +40,14 @@ export function protegerPagina(callback, soloAdmin = false) {
       return;
     }
 
+    let sinPerfil = false;
     try {
       const snap = await getDoc(doc(db, "usuarios", user.uid));
-      if (!snap.exists()) {
-        mostrarErrorFatal(
-          "Tu usuario no tiene un perfil configurado. Pide al administrador que cree tu documento en la colección \"usuarios\"."
-        );
-        return;
-      }
-      const datos = snap.data();
+      // Sin documento en "usuarios": se le trata como CAJERO (el menor
+      // privilegio). Las reglas de Firestore hacen lo mismo: solo es admin
+      // quien tiene rol "admin" en su documento.
+      const datos = snap.exists() ? snap.data() : {};
+      sinPerfil = !snap.exists();
       usuarioActual = {
         uid: user.uid,
         email: user.email,
@@ -61,15 +60,32 @@ export function protegerPagina(callback, soloAdmin = false) {
       return;
     }
 
+    // Página solo para admin: el cajero vuelve a Ventas con un aviso.
     if (soloAdmin && usuarioActual.rol !== "admin") {
+      try { sessionStorage.setItem("avisoPermiso", "1"); } catch { /* sin almacenamiento */ }
       window.location.replace("ventas.html");
       return;
     }
 
     dibujarBarra(usuarioActual);
     document.body.classList.remove("cargando");
+    document.body.classList.toggle("rol-cajero", usuarioActual.rol !== "admin");
+    try {
+      if (sessionStorage.getItem("avisoPermiso")) {
+        sessionStorage.removeItem("avisoPermiso");
+        aviso("No tienes permiso para esta sección", "error");
+      }
+    } catch { /* sin almacenamiento */ }
+    if (sinPerfil) {
+      aviso("Tu usuario no tiene perfil configurado: entras con permisos de cajero.", "info");
+    }
     callback(usuarioActual);
   });
+}
+
+/** ¿El usuario logueado es administrador? */
+export function esAdministrador() {
+  return usuarioActual?.rol === "admin";
 }
 
 /** Muestra un mensaje de error a pantalla completa con botón para salir. */
@@ -381,7 +397,12 @@ export function escucharCaja(callback) {
     dejarDeEscucharCierre = onSnapshot(doc(db, "cierres", cierreId), (s) => {
       const datos = s.exists() ? { id: s.id, ...s.data() } : null;
       callback(datos && datos.estado === "abierta" ? datos : null);
-    }, (error) => { console.error(error); aviso(mensajeError(error), "error"); });
+    }, (error) => {
+      // El cajero solo puede leer el cierre ABIERTO. Si la caja se cierra,
+      // Firestore le niega la lectura: eso significa "ya no hay caja abierta".
+      if (String(error?.code || "").includes("permission-denied")) { callback(null); return; }
+      console.error(error); aviso(mensajeError(error), "error");
+    });
   }, (error) => { console.error(error); aviso(mensajeError(error), "error"); });
 }
 

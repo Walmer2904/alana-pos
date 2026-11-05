@@ -626,3 +626,9 @@ dialog.modal-ancho { width: min(900px, calc(100vw - 2rem)); }
 
 /* ---------- 18. Reportes de ganancia ---------- */
 .nota-pequena { font-size: .85rem; color: var(--gris); margin: .25rem 0 0; max-width: 90ch; }
+
+/* ---------- 19. Elementos según el rol ---------- */
+/* body.rol-cajero lo pone protegerPagina(). Además de ocultar, el JS
+   no escribe en pantalla los datos de admin cuando el usuario es cajero. */
+body.rol-cajero .solo-admin { display: none !important; }
+body:not(.rol-cajero) .solo-cajero { display: none !important; }
