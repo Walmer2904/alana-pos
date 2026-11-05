@@ -18,6 +18,7 @@ import {
   aviso, mensajeError, abrirModal, cerrarModal, escucharCaja, verificarCajaEnTx,
   crearEgresoEnTx, claveDiaLima, inicioDiaLima, sumarDias, confirmar
 } from "./comun.js";
+import { iniciarStock } from "./stock.js";
 
 // Elementos
 const kpiValor = document.getElementById("kpiValor");
@@ -68,6 +69,7 @@ protegerPagina((u) => {
   usuario = u;
   escucharCaja((cierre) => { cajaAbierta = cierre; actualizarOpcionCaja(); });
   escucharInsumos();
+  iniciarStock(u);   // pestaña "Bebidas y productos con stock"
 }, true);
 
 // ------------------------------------------------------------

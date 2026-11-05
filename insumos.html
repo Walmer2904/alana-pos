@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ALANA POS · Insumos</title>
+  <title>ALANA POS · Inventario</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Kaushan+Script&display=swap" rel="stylesheet">
@@ -19,13 +19,20 @@
 
   <main class="contenido">
     <div class="encabezado-pagina">
-      <h1>Insumos</h1>
-      <div class="acciones-fila">
+      <h1>Inventario</h1>
+      <div class="acciones-fila" id="accionesInsumos">
         <button class="btn btn-claro" id="btnHistorialGeneral" title="Movimientos de todos los insumos, incluidos los eliminados">Historial general</button>
         <button class="btn btn-primario" id="btnNuevo">+ Nuevo insumo</button>
       </div>
     </div>
 
+    <div class="filtros" id="pestanasInventario" role="group" aria-label="Sección del inventario">
+      <button type="button" class="chip" data-pestana="insumos" aria-pressed="true">Insumos</button>
+      <button type="button" class="chip" data-pestana="bebidas" aria-pressed="false">Bebidas y productos con stock</button>
+    </div>
+
+    <!-- ==================== Pestaña: Insumos (sin cambios) ==================== -->
+    <div id="vistaInsumos">
     <div class="indicadores">
       <div class="indicador destacado"><div class="rotulo">Valor del inventario</div><div class="valor" id="kpiValor">S/ 0.00</div></div>
       <div class="indicador"><div class="rotulo">Insumos con stock bajo</div><div class="valor" id="kpiBajo">0</div></div>
@@ -67,7 +74,153 @@
         </table>
       </div>
     </section>
+    </div>
+
+    <!-- ============ Pestaña: Bebidas y productos con stock ============ -->
+    <div id="vistaBebidas" class="oculto">
+      <div class="indicadores">
+        <div class="indicador destacado"><div class="rotulo">Valor del stock</div><div class="valor" id="kpiValorStock">S/ 0.00</div><small>stock × costo unitario</small></div>
+        <div class="indicador"><div class="rotulo">Con stock bajo</div><div class="valor" id="kpiStockBajo">0</div></div>
+        <div class="indicador"><div class="rotulo">Agotados</div><div class="valor" id="kpiAgotados">0</div></div>
+      </div>
+
+      <section class="tarjeta" aria-labelledby="tituloBebidas">
+        <h2 id="tituloBebidas">Bebidas y productos con stock <span class="texto-gris" id="contadorStock"></span></h2>
+        <p class="texto-gris" style="margin-top:0">Se descuentan solos al vender. Aquí registras los ingresos (compras al
+          proveedor) y los ajustes. Para que un producto aparezca, activa "Controlar stock" en Productos.</p>
+        <div class="buscador">
+          <label for="buscarStock" class="sr-only">Buscar producto con stock</label>
+          <input type="search" id="buscarStock" placeholder="Buscar por nombre…" autocomplete="off">
+        </div>
+        <div class="tabla-contenedor">
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th>Foto</th>
+                <th>Producto</th>
+                <th class="num">Stock</th>
+                <th class="num">Mínimo</th>
+                <th class="num">Costo unitario</th>
+                <th class="num">Valor del stock</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tablaStock">
+              <tr><td colspan="8" class="vacio">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </main>
+
+  <!-- Modal: registrar ingreso de stock (compra al proveedor) -->
+  <dialog class="modal" id="modalIngresoStock" aria-labelledby="tituloIngresoStock">
+    <div class="modal-cabecera">
+      <h2 id="tituloIngresoStock">Registrar ingreso</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalIngresoStock" aria-label="Cerrar">✕</button>
+    </div>
+    <form class="modal-cuerpo" id="formIngresoStock" novalidate>
+      <p id="ingresoInfo" style="margin-top:0;font-weight:700"></p>
+      <div class="cuadricula-2" style="gap:.75rem">
+        <div class="campo">
+          <label for="ingresoCantidad">Cantidad que ingresa <span id="ingresoUnidad"></span></label>
+          <input type="number" id="ingresoCantidad" class="monto-grande" min="1" step="1" inputmode="numeric">
+        </div>
+        <div class="campo">
+          <label for="ingresoTotal">Costo total pagado (S/)</label>
+          <input type="number" id="ingresoTotal" class="monto-grande" min="0" step="0.10" inputmode="decimal">
+        </div>
+      </div>
+      <div class="campo">
+        <label for="ingresoNota">Nota (opcional)</label>
+        <input type="text" id="ingresoNota" maxlength="120" placeholder="Ej.: proveedor, distribuidora">
+      </div>
+      <div id="ingresoPrevia" class="info-cliente oculto" aria-live="polite"></div>
+      <label class="interruptor" style="margin-top:1rem">
+        <input type="checkbox" id="ingresoCaja"> Pagado con efectivo de caja
+      </label>
+      <small class="texto-gris" id="ingresoCajaInfo"></small>
+      <div id="errorIngresoStock" class="mensaje-error oculto" role="alert" style="margin-top:1rem"></div>
+      <div class="modal-acciones">
+        <button type="submit" class="btn btn-primario btn-grande" id="btnGuardarIngresoStock">Registrar ingreso</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: ajuste de stock -->
+  <dialog class="modal" id="modalAjusteStock" aria-labelledby="tituloAjusteStock">
+    <div class="modal-cabecera">
+      <h2 id="tituloAjusteStock">Ajuste de stock</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalAjusteStock" aria-label="Cerrar">✕</button>
+    </div>
+    <form class="modal-cuerpo" id="formAjusteStock" novalidate>
+      <p id="ajusteInfo" style="margin-top:0;font-weight:700"></p>
+      <div class="cuadricula-2" style="gap:.75rem">
+        <div class="campo">
+          <label for="ajusteCantidad">Cantidad (+ suma, − resta)</label>
+          <input type="number" id="ajusteCantidad" class="monto-grande" step="1" inputmode="numeric" placeholder="Ej.: -2">
+        </div>
+        <div class="campo">
+          <label for="ajusteMotivo">Motivo</label>
+          <select id="ajusteMotivo">
+            <option value="">Elige un motivo…</option>
+            <option value="conteo físico">Conteo físico</option>
+            <option value="producto dañado/vencido">Producto dañado/vencido</option>
+            <option value="consumo interno">Consumo interno</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+      </div>
+      <div class="campo">
+        <label for="ajusteNota">Detalle (opcional; obligatorio si eliges "Otro")</label>
+        <input type="text" id="ajusteNota" maxlength="120">
+      </div>
+      <div id="ajustePrevia" class="info-cliente oculto" aria-live="polite"></div>
+      <div id="errorAjusteStock" class="mensaje-error oculto" role="alert"></div>
+      <div class="modal-acciones">
+        <button type="submit" class="btn btn-primario btn-grande" id="btnGuardarAjusteStock">Registrar ajuste</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: historial de movimientos de stock de un producto -->
+  <dialog class="modal modal-ancho" id="modalHistorialStock" aria-labelledby="tituloHistorialStock">
+    <div class="modal-cabecera">
+      <h2 id="tituloHistorialStock">Historial</h2>
+      <button class="btn btn-claro btn-icono" data-cerrar="modalHistorialStock" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-cuerpo">
+      <form class="rango-personalizado" id="formHistorialStock" novalidate style="margin-bottom:1rem">
+        <div class="campo">
+          <label for="histStockDesde">Desde</label>
+          <input type="date" id="histStockDesde" required>
+        </div>
+        <div class="campo">
+          <label for="histStockHasta">Hasta</label>
+          <input type="date" id="histStockHasta" required>
+        </div>
+        <button type="submit" class="btn btn-primario">Filtrar</button>
+      </form>
+      <div class="tabla-contenedor">
+        <table class="tabla">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Tipo</th>
+              <th class="num">Cantidad</th>
+              <th>Stock</th>
+              <th class="num">Costo total</th>
+              <th>Motivo</th>
+              <th>Usuario</th>
+            </tr>
+          </thead>
+          <tbody id="tablaHistorialStock"></tbody>
+        </table>
+      </div>
+    </div>
+  </dialog>
 
   <!-- Modal: agregar / editar insumo -->
   <dialog class="modal" id="modalInsumo" aria-labelledby="tituloInsumo">

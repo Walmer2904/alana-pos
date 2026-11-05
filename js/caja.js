@@ -15,7 +15,8 @@ import {
   protegerPagina, soles, redondear, fechaHora, escaparHTML, aviso, confirmar,
   mensajeError, abrirModal, cerrarModal, imprimirTicket, escucharCaja,
   escucharVentasDeCaja, escucharCobrosDeCaja, calcularTotales, refCajaActual,
-  METODOS, NOMBRES_METODO, encabezadoTicket, escucharEgresosDeCaja, calcularEgresos
+  METODOS, NOMBRES_METODO, encabezadoTicket, escucharEgresosDeCaja, calcularEgresos,
+  NOMBRES_EGRESO
 } from "./comun.js";
 
 // Elementos
@@ -165,12 +166,13 @@ function dibujarResumen() {
       <small>${eg.cantidad} egreso(s) · se restan del efectivo esperado</small>
     </div>
     <div class="indicador"><div class="rotulo">Compras de insumos</div><div class="valor">${soles(eg.insumos)}</div></div>
+    <div class="indicador"><div class="rotulo">Compras de bebidas</div><div class="valor">${soles(eg.productos)}</div></div>
     <div class="indicador"><div class="rotulo">Pagos a trabajadores</div><div class="valor">${soles(eg.trabajadores)}</div></div>`;
   tablaEgresos.innerHTML = egresosTurno.length
     ? egresosTurno.map((e) => `
         <tr>
           <td>${fechaHora(e.fecha)}</td>
-          <td>${e.tipo === "insumo" ? "Insumo" : "Trabajador"}</td>
+          <td>${NOMBRES_EGRESO[e.tipo] || escaparHTML(e.tipo)}</td>
           <td>${escaparHTML(e.descripcion)}</td>
           <td class="num">${soles(e.monto)}</td>
           <td>${escaparHTML(e.usuarioNombre || "")}</td>
@@ -308,6 +310,7 @@ formCierre.addEventListener("submit", async (e) => {
         cantidad: egresos.cantidad,
         insumos: egresos.insumos,
         trabajadores: egresos.trabajadores,
+        productos: egresos.productos,                 // ingresos de bebidas pagados con caja
         detalle: listaEgresos.map((e) => ({
           tipo: e.tipo,
           descripcion: e.descripcion,
@@ -459,6 +462,7 @@ function htmlReporteCierre(c) {
           <tr><td>${escaparHTML(e.descripcion)}</td><td class="num">${soles(e.monto)}</td></tr>`).join("")
           || '<tr><td colspan="2">Sin egresos</td></tr>'}
         <tr><td>Insumos</td><td class="num">${soles(eg.insumos)}</td></tr>
+        <tr><td>Bebidas</td><td class="num">${soles(eg.productos)}</td></tr>
         <tr><td>Trabajadores</td><td class="num">${soles(eg.trabajadores)}</td></tr>
         <tr class="total"><td>Total egresos</td><td class="num">${soles(eg.total)}</td></tr>
       </table>
