@@ -48,9 +48,36 @@ service cloud.firestore {
 
     // Productos: todos los logueados leen (el cajero los necesita para vender);
     // solo el admin crea, edita, desactiva o elimina.
+    // Excepción para vender bebidas (productos con manejaStock): el cajero puede
+    // actualizar SOLO el campo stock (y actualizadoEn), SOLO para bajarlo y sin
+    // dejarlo negativo. Subir el stock (ingresos, ajustes, devolver al anular)
+    // es solo del admin.
     match /productos/{id} {
       allow read: if logueado();
-      allow write: if esAdmin();
+      allow create, delete: if esAdmin();
+      allow update: if esAdmin() || (
+        logueado()
+        && resource.data.get('manejaStock', false) == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'actualizadoEn'])
+        && request.resource.data.stock is number
+        && request.resource.data.stock >= 0
+        && request.resource.data.stock < resource.data.stock
+      );
+    }
+
+    // Movimientos de stock de productos (ingreso, venta, anulacion, ajuste).
+    // El cajero solo crea movimientos de tipo "venta" (cantidad negativa, hora
+    // del servidor) al vender; el resto solo el admin. Nunca se modifican ni borran.
+    match /movimientosStock/{id} {
+      allow read: if esAdmin();
+      allow create: if esAdmin() || (
+        logueado()
+        && request.resource.data.tipo == 'venta'
+        && request.resource.data.cantidad is number
+        && request.resource.data.cantidad < 0
+        && request.resource.data.fecha == request.time
+      );
+      allow update, delete: if false;
     }
 
     // Ventas:
@@ -171,8 +198,8 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Egresos de caja (compras de insumos y pagos a trabajadores pagados con
-    // efectivo de la caja). Los lee cualquier usuario logueado porque la Caja
+    // Egresos de caja (compras de insumos, ingresos de bebidas y pagos a
+    // trabajadores pagados con efectivo de la caja). Los lee cualquier usuario logueado porque la Caja
     // la usa también el cajero; solo el admin los crea; nunca se modifican ni borran.
     match /egresos/{id} {
       allow read: if logueado();

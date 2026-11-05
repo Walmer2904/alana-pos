@@ -48,6 +48,43 @@
             <label for="categoria">Categoría</label>
             <input type="text" id="categoria" list="listaCategorias" maxlength="30" placeholder="Ej.: Hamburguesas" required>
             <datalist id="listaCategorias"></datalist>
+            <!-- Sugerencia al elegir "Bebidas" (no obliga) -->
+            <div id="sugerenciaStock" class="info-cliente oculto" role="status">
+              Las bebidas suelen comprarse hechas. ¿Quieres controlar su stock?
+              <button type="button" class="btn btn-claro btn-chico" id="btnActivarStock">Activar "Controlar stock"</button>
+            </div>
+          </div>
+
+          <!-- Stock: solo para productos que se compran hechos (bebidas, etc.) -->
+          <label class="interruptor">
+            <input type="checkbox" id="manejaStock">
+            Controlar stock <small class="texto-gris">(bebidas y productos que se compran hechos)</small>
+          </label>
+          <div id="zonaStock" class="oculto">
+            <div class="cuadricula-2" style="gap:.75rem">
+              <div class="campo" id="campoStockInicial">
+                <label for="stockInicial">Stock inicial</label>
+                <input type="number" id="stockInicial" min="0" step="1" inputmode="numeric" value="0">
+              </div>
+              <div class="campo oculto" id="campoStockActual">
+                <span class="etiqueta">Stock actual</span>
+                <p id="textoStockActual" style="margin:.35rem 0 0;font-weight:800"></p>
+                <small>Se cambia en Inventario (ingreso o ajuste) para que quede en el historial.</small>
+              </div>
+              <div class="campo">
+                <label for="stockMinimo">Stock mínimo (alerta)</label>
+                <input type="number" id="stockMinimo" min="0" step="1" inputmode="numeric" value="0">
+              </div>
+            </div>
+            <div class="campo">
+              <label for="unidadStock">Unidad</label>
+              <select id="unidadStock">
+                <option value="unidad">unidad</option>
+                <option value="botella">botella</option>
+                <option value="lata">lata</option>
+                <option value="paquete">paquete</option>
+              </select>
+            </div>
           </div>
 
           <div class="campo">
@@ -94,12 +131,13 @@
                 <th class="num">Precio</th>
                 <th class="num">Costo</th>
                 <th class="num">Ganancia</th>
+                <th class="num">Stock</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
             </thead>
             <tbody id="tablaProductos">
-              <tr><td colspan="8" class="vacio">Cargando…</td></tr>
+              <tr><td colspan="9" class="vacio">Cargando…</td></tr>
             </tbody>
           </table>
         </div>

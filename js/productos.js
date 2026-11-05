@@ -9,12 +9,15 @@
 // ============================================================
 
 import {
-  db, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp
+  db, collection, doc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction
 } from "./firebase.js";
 import {
   protegerPagina, soles, redondear, escaparHTML, aviso, confirmar, mensajeError,
-  tieneCosto, gananciaUnidad, porcentaje
+  tieneCosto, gananciaUnidad, porcentaje, usuarioActual, manejaStock, stockDe,
+  estadoStock, cantidadConUnidad, UNIDADES_STOCK
 } from "./comun.js";
+
+const CATEGORIA_BEBIDAS = "Bebidas";   // siempre se sugiere en la lista de categorías
 
 const TAM_MAX = 250;              // lado máximo en píxeles
 const CALIDAD_JPEG = 0.6;         // calidad JPEG inicial
@@ -44,6 +47,16 @@ const inBuscar = document.getElementById("buscar");
 const tabla = document.getElementById("tablaProductos");
 const contador = document.getElementById("contador");
 const listaCategorias = document.getElementById("listaCategorias");
+// Stock
+const inManejaStock = document.getElementById("manejaStock");
+const zonaStock = document.getElementById("zonaStock");
+const inStockInicial = document.getElementById("stockInicial");
+const inStockMinimo = document.getElementById("stockMinimo");
+const inUnidadStock = document.getElementById("unidadStock");
+const campoStockInicial = document.getElementById("campoStockInicial");
+const campoStockActual = document.getElementById("campoStockActual");
+const textoStockActual = document.getElementById("textoStockActual");
+const sugerenciaStock = document.getElementById("sugerenciaStock");
 
 // Estado
 let productos = [];        // lista completa en tiempo real
@@ -78,7 +91,8 @@ function escucharProductos() {
 }
 
 function actualizarCategorias() {
-  const categorias = [...new Set(productos.map((p) => p.categoria).filter(Boolean))];
+  // "Bebidas" siempre aparece como opción, aunque todavía no haya productos en ella
+  const categorias = [...new Set([...productos.map((p) => p.categoria).filter(Boolean), CATEGORIA_BEBIDAS])];
   listaCategorias.innerHTML = categorias.map((c) => `<option value="${escaparHTML(c)}">`).join("");
 }
 
@@ -98,7 +112,7 @@ function dibujarTabla() {
   bannerSinCosto.innerHTML = `<span>⚠ ${sinCosto} producto(s) no tienen costo de producción. La ganancia en Reportes saldrá inexacta hasta que lo registres (botón Editar).</span>`;
 
   if (filtrados.length === 0) {
-    tabla.innerHTML = `<tr><td colspan="8" class="vacio">${productos.length ? "Ningún producto coincide con la búsqueda." : "Aún no hay productos. Agrega el primero con el formulario."}</td></tr>`;
+    tabla.innerHTML = `<tr><td colspan="9" class="vacio">${productos.length ? "Ningún producto coincide con la búsqueda." : "Aún no hay productos. Agrega el primero con el formulario."}</td></tr>`;
     return;
   }
 
@@ -120,6 +134,7 @@ function dibujarTabla() {
       <td class="num">${soles(p.precio)}</td>
       <td class="num">${costo}</td>
       <td class="num">${ganancia}</td>
+      <td class="num">${celdaStock(p)}</td>
       <td>${p.activo
         ? '<span class="etiqueta-estado verde">Activo</span>'
         : '<span class="etiqueta-estado">Inactivo</span>'}</td>
@@ -133,6 +148,46 @@ function dibujarTabla() {
     </tr>`;
   }).join("");
 }
+
+/** Stock en la lista: cantidad y alerta (solo productos que lo controlan). */
+function celdaStock(p) {
+  if (!manejaStock(p)) return '<span class="texto-gris">—</span>';
+  const e = estadoStock(p);
+  const alerta = e === "agotado"
+    ? '<br><span class="etiqueta-estado rojo">Agotado</span>'
+    : e === "bajo" ? '<br><span class="etiqueta-estado amarillo">Stock bajo</span>' : "";
+  return `<strong>${cantidadConUnidad(stockDe(p), p.unidadStock || "unidad")}</strong>${alerta}`;
+}
+
+// ------------------------------------------------------------
+// Controlar stock (formulario)
+// ------------------------------------------------------------
+/** Muestra u oculta los campos de stock según el interruptor y si es edición. */
+function actualizarZonaStock() {
+  const activo = inManejaStock.checked;
+  zonaStock.classList.toggle("oculto", !activo);
+  const actual = editandoId ? productos.find((p) => p.id === editandoId) : null;
+  // Si el producto YA controla stock, el stock no se edita aquí (va por Inventario).
+  const yaControla = manejaStock(actual);
+  campoStockInicial.classList.toggle("oculto", yaControla);
+  campoStockActual.classList.toggle("oculto", !yaControla);
+  if (yaControla) textoStockActual.textContent = cantidadConUnidad(stockDe(actual), actual.unidadStock || "unidad");
+  actualizarSugerencia();
+}
+
+/** Al elegir "Bebidas", sugerir activar el control de stock (sin obligar). */
+function actualizarSugerencia() {
+  const esBebida = inCategoria.value.trim().toLowerCase() === CATEGORIA_BEBIDAS.toLowerCase();
+  sugerenciaStock.classList.toggle("oculto", !esBebida || inManejaStock.checked);
+}
+
+inManejaStock.addEventListener("change", actualizarZonaStock);
+inCategoria.addEventListener("input", actualizarSugerencia);
+document.getElementById("btnActivarStock").addEventListener("click", () => {
+  inManejaStock.checked = true;
+  actualizarZonaStock();
+  inStockInicial.focus();
+});
 
 // Aviso en vivo de ganancia mientras se escribe precio/costo
 function actualizarInfoGanancia() {
@@ -200,10 +255,15 @@ function cargarEnFormulario(p) {
   inCosto.value = tieneCosto(p) ? p.costo : "";
   inCategoria.value = p.categoria || "";
   inActivo.checked = !!p.activo;
+  inManejaStock.checked = manejaStock(p);
+  inStockInicial.value = 0;
+  inStockMinimo.value = Number(p.stockMinimo) || 0;
+  inUnidadStock.value = UNIDADES_STOCK.includes(p.unidadStock) ? p.unidadStock : "unidad";
   inImagen.value = "";
   imagenBase64 = p.imagen || "";
   mostrarVistaPrevia();
   actualizarInfoGanancia();
+  actualizarZonaStock();
   btnCancelar.classList.remove("oculto");
   btnGuardar.textContent = "Guardar cambios";
   ocultarError();
@@ -215,6 +275,11 @@ function limpiarFormulario() {
   editandoId = null;
   form.reset();
   inActivo.checked = true;
+  inManejaStock.checked = false;   // por defecto apagado: los platos no llevan stock
+  inStockInicial.value = 0;
+  inStockMinimo.value = 0;
+  inUnidadStock.value = "unidad";
+  actualizarZonaStock();
   imagenBase64 = "";
   mostrarVistaPrevia();
   infoGanancia.classList.add("oculto");
@@ -408,24 +473,71 @@ form.addEventListener("submit", async (e) => {
   );
   if (duplicado) return mostrarError(`Ya existe un producto llamado "${duplicado.nombre}".`, inNombre);
 
+  // --- Stock (solo si "Controlar stock" está activado) ---
+  const conStock = inManejaStock.checked;
+  const stockInicial = Number(inStockInicial.value || "0");
+  const stockMinimo = Number(inStockMinimo.value || "0");
+  if (conStock) {
+    if (!Number.isInteger(stockMinimo) || stockMinimo < 0) return mostrarError("El stock mínimo debe ser un número entero, 0 o más.", inStockMinimo);
+  }
+
   const datos = {
     nombre,
     precio,
     costo,
     categoria,
     imagen: imagenBase64,
-    activo: inActivo.checked
+    activo: inActivo.checked,
+    manejaStock: conStock
   };
+  if (conStock) {
+    datos.stockMinimo = stockMinimo;
+    datos.unidadStock = inUnidadStock.value;
+  }
+
+  const anterior = editandoId ? productos.find((p) => p.id === editandoId) : null;
+  // Se fija el stock inicial al crear el producto o al ACTIVAR el control de
+  // stock en uno existente. Si ya lo controlaba, el stock NO se toca aquí
+  // (cambia con ventas, ingresos y ajustes en Inventario).
+  const fijarStockInicial = conStock && !manejaStock(anterior);
+  if (fijarStockInicial && (!Number.isInteger(stockInicial) || stockInicial < 0)) {
+    return mostrarError("El stock inicial debe ser un número entero, 0 o más.", inStockInicial);
+  }
 
   btnGuardar.disabled = true;
   try {
-    if (editandoId) {
-      await updateDoc(doc(db, "productos", editandoId), datos);
-      aviso("Cambios guardados.");
-    } else {
-      await addDoc(collection(db, "productos"), { ...datos, creadoEn: serverTimestamp() });
-      aviso("Producto agregado.");
-    }
+    const ref = editandoId ? doc(db, "productos", editandoId) : doc(collection(db, "productos"));
+    // Producto + (si corresponde) su movimiento de stock inicial, juntos
+    await runTransaction(db, async (tx) => {
+      let stockAntes = 0;
+      if (editandoId) {
+        const snap = await tx.get(ref);
+        if (!snap.exists()) throw new Error("El producto ya no existe.");
+        stockAntes = Number(snap.data().stock) || 0;
+      }
+      const cambios = { ...datos };
+      if (fijarStockInicial) cambios.stock = stockInicial;
+      if (editandoId) tx.update(ref, cambios);
+      else tx.set(ref, { ...cambios, creadoEn: serverTimestamp() });
+
+      if (fijarStockInicial) {
+        tx.set(doc(collection(db, "movimientosStock")), {
+          productoId: ref.id,
+          nombreProducto: nombre,
+          tipo: "ajuste",
+          cantidad: stockInicial - stockAntes,
+          stockAntes,
+          stockDespues: stockInicial,
+          costoTotal: redondear(stockInicial * costo),
+          motivo: "stock inicial",
+          ventaId: null,
+          fecha: serverTimestamp(),
+          usuarioNombre: usuarioActual?.nombre || "",
+          cierreId: null
+        });
+      }
+    });
+    aviso(editandoId ? "Cambios guardados." : "Producto agregado.");
     limpiarFormulario();
     inNombre.focus();
   } catch (error) {

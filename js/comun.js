@@ -113,7 +113,7 @@ const MENU = [
   { href: "creditos.html", texto: "Créditos", soloAdmin: false },
   { href: "caja.html", texto: "Caja", soloAdmin: false },
   { href: "productos.html", texto: "Productos", soloAdmin: true },
-  { href: "insumos.html", texto: "Insumos", soloAdmin: true },
+  { href: "insumos.html", texto: "Inventario", soloAdmin: true },
   { href: "trabajadores.html", texto: "Trabajadores", soloAdmin: true },
   { href: "ventas-anteriores.html", texto: "Ventas anteriores", soloAdmin: true },
   { href: "reportes.html", texto: "Reportes", soloAdmin: true }
@@ -507,32 +507,178 @@ export function calcularTotales(ventas, cobros = []) {
 }
 
 /**
- * Anula una venta al crédito y su crédito, en una sola transacción.
- * No se permite si el crédito ya tiene pagos registrados.
- * Lanza Error("TIENE_PAGOS") o Error("YA_NO_PENDIENTE") según el caso.
+ * Anula una venta (normal, al crédito o manual) en UNA sola transacción:
+ *  - Marca la venta como anulada.
+ *  - Si es al crédito, anula también su crédito (solo si no tiene pagos).
+ *  - Devuelve al stock las unidades de los items con manejaStock: true
+ *    (bebidas, etc.) y registra un movimiento "anulacion" por producto.
+ * Lanza Error("TIENE_PAGOS"), Error("YA_NO_PENDIENTE"), Error("YA_ANULADA") o Error("NO_EXISTE").
  */
-export async function anularVentaCredito(ventaId, creditoId, nombreUsuario) {
+export async function anularVenta(ventaId, nombreUsuario) {
   const refVenta = doc(db, "ventas", ventaId);
-  const refCredito = doc(db, "creditos", creditoId);
   await runTransaction(db, async (tx) => {
-    const credito = await tx.get(refCredito);
-    if (credito.exists()) {
-      const datos = credito.data();
-      if ((datos.pagos || []).length > 0) throw new Error("TIENE_PAGOS");
-      if (datos.estado !== "pendiente") throw new Error("YA_NO_PENDIENTE");
+    // ---- Lecturas (todas antes de escribir) ----
+    const snapVenta = await tx.get(refVenta);
+    if (!snapVenta.exists()) throw new Error("NO_EXISTE");
+    const venta = snapVenta.data();
+    if (venta.anulada) throw new Error("YA_ANULADA");
+
+    let refCredito = null;
+    if (venta.metodoPago === "credito" && venta.creditoId) {
+      refCredito = doc(db, "creditos", venta.creditoId);
+      const snapCredito = await tx.get(refCredito);
+      if (snapCredito.exists()) {
+        const datos = snapCredito.data();
+        if ((datos.pagos || []).length > 0) throw new Error("TIENE_PAGOS");
+        if (datos.estado !== "pendiente") throw new Error("YA_NO_PENDIENTE");
+      } else {
+        refCredito = null;
+      }
     }
+
+    // Unidades a devolver por producto (solo items que descontaron stock)
+    const devolver = new Map();
+    for (const it of venta.items || []) {
+      if (it.manejaStock !== true || !it.productoId) continue;
+      devolver.set(it.productoId, (devolver.get(it.productoId) || 0) + (Number(it.cantidad) || 0));
+    }
+    const lecturas = [];
+    for (const [productoId, cantidad] of devolver) {
+      const ref = doc(db, "productos", productoId);
+      const snap = await tx.get(ref);
+      // Si el producto se eliminó o ya no controla stock, no hay nada que devolver
+      if (!snap.exists() || snap.data().manejaStock !== true) continue;
+      const p = snap.data();
+      lecturas.push({ ref, productoId, cantidad, nombre: p.nombre, stockAntes: Number(p.stock) || 0, costo: tieneCosto(p) ? p.costo : 0 });
+    }
+
+    // ---- Escrituras ----
     tx.update(refVenta, { anulada: true, anuladaPor: nombreUsuario, anuladaEn: serverTimestamp() });
-    if (credito.exists()) {
+    if (refCredito) {
       tx.update(refCredito, { estado: "anulado", saldoPendiente: 0, anuladoPor: nombreUsuario, anuladoEn: serverTimestamp() });
+    }
+    for (const l of lecturas) {
+      const stockDespues = l.stockAntes + l.cantidad;
+      tx.update(l.ref, { stock: stockDespues, actualizadoEn: serverTimestamp() });
+      tx.set(doc(collection(db, "movimientosStock")), {
+        productoId: l.productoId,
+        nombreProducto: l.nombre,
+        tipo: "anulacion",
+        cantidad: l.cantidad,
+        stockAntes: l.stockAntes,
+        stockDespues,
+        costoTotal: redondear(l.costo * l.cantidad),
+        motivo: "anulación de venta",
+        ventaId,
+        fecha: serverTimestamp(),
+        usuarioNombre: nombreUsuario,
+        cierreId: venta.cierreId ?? null
+      });
     }
   });
 }
 
-/** Mensaje claro para los errores de anularVentaCredito. */
+/** Compatibilidad: anular una venta al crédito es anular la venta (incluye su crédito). */
+export function anularVentaCredito(ventaId, _creditoId, nombreUsuario) {
+  return anularVenta(ventaId, nombreUsuario);
+}
+
+/** Mensaje claro para los errores de anularVenta. */
 export function mensajeAnulacion(error) {
   if (error.message === "TIENE_PAGOS") return "No se puede anular: este crédito ya tiene pagos registrados.";
   if (error.message === "YA_NO_PENDIENTE") return "Este crédito ya no está pendiente (fue pagado o anulado).";
+  if (error.message === "YA_ANULADA") return "Esta venta ya estaba anulada.";
+  if (error.message === "NO_EXISTE") return "La venta no existe.";
   return mensajeError(error);
+}
+
+// ------------------------------------------------------------
+// Stock de productos que se compran hechos (bebidas, etc.)
+// ------------------------------------------------------------
+// Campos en el producto: manejaStock (true/false), stock (entero),
+// stockMinimo y unidadStock. Los platos preparados no llevan stock.
+// Cada cambio de stock crea un documento en "movimientosStock" dentro de
+// la MISMA transacción.
+export const UNIDADES_STOCK = ["unidad", "botella", "lata", "paquete"];
+
+/** ¿El producto controla stock? */
+export function manejaStock(p) {
+  return p?.manejaStock === true;
+}
+
+/** Stock actual (nunca negativo). */
+export function stockDe(p) {
+  return Math.max(0, Number(p?.stock) || 0);
+}
+
+/** "agotado" (stock 0), "bajo" (stock ≤ mínimo) o "normal". */
+export function estadoStock(p) {
+  const s = stockDe(p);
+  if (s <= 0) return "agotado";
+  if (s <= (Number(p?.stockMinimo) || 0)) return "bajo";
+  return "normal";
+}
+
+/** Etiqueta HTML del estado del stock. */
+export function etiquetaStock(p) {
+  const e = estadoStock(p);
+  if (e === "agotado") return '<span class="etiqueta-estado rojo">Agotado</span>';
+  if (e === "bajo") return '<span class="etiqueta-estado amarillo">Stock bajo</span>';
+  return '<span class="etiqueta-estado verde">Normal</span>';
+}
+
+/**
+ * Fase de LECTURA (dentro de una transacción, antes de escribir): lee el
+ * stock real de los items con manejaStock y verifica que alcance (por si la
+ * otra PC vendió al mismo tiempo). Si el producto ya no controla stock, el
+ * item se marca manejaStock: false. Lanza Error("SIN_STOCK") con
+ * .producto y .quedan si no alcanza.
+ */
+export async function leerStockEnTx(tx, items) {
+  const lecturas = [];
+  for (const it of items) {
+    if (it.manejaStock !== true) continue;
+    const ref = doc(db, "productos", it.productoId);
+    const snap = await tx.get(ref);
+    const p = snap.exists() ? snap.data() : null;
+    if (!p || p.manejaStock !== true) { it.manejaStock = false; continue; }
+    const stockAntes = Number(p.stock) || 0;
+    if (it.cantidad > stockAntes) {
+      const err = new Error("SIN_STOCK");
+      err.producto = p.nombre;
+      err.quedan = Math.max(0, stockAntes);
+      throw err;
+    }
+    lecturas.push({ ref, productoId: it.productoId, nombre: p.nombre, cantidad: it.cantidad, stockAntes, costo: tieneCosto(p) ? p.costo : 0 });
+  }
+  return lecturas;
+}
+
+/** Fase de ESCRITURA: descuenta el stock leído y crea un movimiento "venta" por producto. */
+export function descontarStockEnTx(tx, lecturas, { ventaId, usuarioNombre, cierreId }) {
+  for (const l of lecturas) {
+    const stockDespues = l.stockAntes - l.cantidad;
+    tx.update(l.ref, { stock: stockDespues, actualizadoEn: serverTimestamp() });
+    tx.set(doc(collection(db, "movimientosStock")), {
+      productoId: l.productoId,
+      nombreProducto: l.nombre,
+      tipo: "venta",
+      cantidad: -l.cantidad,
+      stockAntes: l.stockAntes,
+      stockDespues,
+      costoTotal: redondear(l.costo * l.cantidad),
+      motivo: "venta",
+      ventaId,
+      fecha: serverTimestamp(),
+      usuarioNombre,
+      cierreId: cierreId ?? null
+    });
+  }
+}
+
+/** Mensaje cuando no alcanza el stock al cobrar. */
+export function mensajeSinStock(error) {
+  return `Solo quedan ${error.quedan} de ${error.producto}; ajusta el pedido.`;
 }
 
 // ------------------------------------------------------------
@@ -554,7 +700,7 @@ export async function verificarCajaEnTx(tx, cierreId) {
 
 /**
  * Registra un egreso de caja dentro de una transacción (después de las lecturas).
- * @param {object} datos  { tipo: "insumo"|"trabajador", descripcion, monto, cierreId, referenciaId, usuarioNombre }
+ * @param {object} datos  { tipo: "insumo"|"trabajador"|"producto", descripcion, monto, cierreId, referenciaId, usuarioNombre }
  */
 export function crearEgresoEnTx(tx, datos) {
   tx.set(doc(collection(db, "egresos")), {
@@ -577,22 +723,27 @@ export function escucharEgresosDeCaja(cierreId, callback) {
   }, (error) => { console.error(error); aviso(mensajeError(error), "error"); });
 }
 
-/** Suma egresos: total, cantidad y por tipo. */
+/** Suma egresos: total, cantidad y por tipo ("insumo", "trabajador", "producto" = bebidas). */
 export function calcularEgresos(egresos) {
-  let total = 0, insumos = 0, trabajadores = 0;
+  let total = 0, insumos = 0, trabajadores = 0, productos = 0;
   for (const e of egresos) {
     const m = Number(e.monto) || 0;
     total += m;
     if (e.tipo === "insumo") insumos += m;
     if (e.tipo === "trabajador") trabajadores += m;
+    if (e.tipo === "producto") productos += m;
   }
   return {
     total: redondear(total),
     cantidad: egresos.length,
     insumos: redondear(insumos),
-    trabajadores: redondear(trabajadores)
+    trabajadores: redondear(trabajadores),
+    productos: redondear(productos)
   };
 }
+
+/** Nombre del tipo de egreso para mostrar. */
+export const NOMBRES_EGRESO = { insumo: "Insumo", trabajador: "Trabajador", producto: "Bebidas / productos" };
 
 // ------------------------------------------------------------
 // Costo de producción
