@@ -20,7 +20,10 @@
   <main class="contenido">
     <div class="encabezado-pagina">
       <h1>Insumos</h1>
-      <button class="btn btn-primario" id="btnNuevo">+ Nuevo insumo</button>
+      <div class="acciones-fila">
+        <button class="btn btn-claro" id="btnHistorialGeneral" title="Movimientos de todos los insumos, incluidos los eliminados">Historial general</button>
+        <button class="btn btn-primario" id="btnNuevo">+ Nuevo insumo</button>
+      </div>
     </div>
 
     <div class="indicadores">
@@ -32,6 +35,11 @@
     <section class="tarjeta" aria-labelledby="tituloLista">
       <h2 id="tituloLista">Inventario <span class="texto-gris" id="contador"></span></h2>
       <p class="texto-gris" style="margin-top:0">El descuento de insumos es manual: registra las salidas (uso, merma o ajuste) cuando corresponda.</p>
+      <p class="nota-pequena" style="margin:-.25rem 0 1rem">
+        <strong>Desactivar</strong> (en "Editar") oculta el insumo pero lo conserva y puedes reactivarlo.
+        <strong>Eliminar</strong> lo quita para siempre; su historial de compras y salidas se conserva
+        (lo ves en "Historial general" y en Reportes).
+      </p>
       <div class="filtros-reporte" style="margin-bottom:1rem">
         <div class="buscador" style="flex:1;min-width:220px;margin:0">
           <label for="buscar" class="sr-only">Buscar insumo</label>
@@ -201,6 +209,7 @@
           <thead>
             <tr>
               <th>Fecha</th>
+              <th>Insumo</th>
               <th>Tipo</th>
               <th class="num">Cantidad</th>
               <th class="num">Costo total</th>

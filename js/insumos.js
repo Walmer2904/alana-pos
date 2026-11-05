@@ -10,12 +10,13 @@
 // ============================================================
 
 import {
-  db, collection, doc, getDocs, query, where, onSnapshot, serverTimestamp, runTransaction
+  db, collection, doc, getDocs, query, where, orderBy, onSnapshot, serverTimestamp, runTransaction,
+  deleteDoc, Timestamp
 } from "./firebase.js";
 import {
   protegerPagina, soles, redondear, redondearA, cantidadConUnidad, fechaHora, escaparHTML,
   aviso, mensajeError, abrirModal, cerrarModal, escucharCaja, verificarCajaEnTx,
-  crearEgresoEnTx, claveDiaLima, inicioDiaLima, sumarDias
+  crearEgresoEnTx, claveDiaLima, inicioDiaLima, sumarDias, confirmar
 } from "./comun.js";
 
 // Elementos
@@ -136,6 +137,7 @@ function dibujar() {
             <button class="btn btn-claro btn-chico" data-accion="salida" data-id="${i.id}">Salida / ajuste</button>
             <button class="btn btn-claro btn-chico" data-accion="historial" data-id="${i.id}">Historial</button>
             <button class="btn btn-claro btn-chico" data-accion="editar" data-id="${i.id}">Editar</button>
+            <button class="btn btn-peligro btn-chico" data-accion="eliminar" data-id="${i.id}">Eliminar</button>
           </div>
         </td>
       </tr>`;
@@ -151,7 +153,29 @@ tabla.addEventListener("click", (e) => {
   if (btn.dataset.accion === "salida") abrirSalida(i);
   if (btn.dataset.accion === "historial") abrirHistorial(i);
   if (btn.dataset.accion === "editar") abrirFormulario(i);
+  if (btn.dataset.accion === "eliminar") eliminarInsumo(i);
 });
+
+// ------------------------------------------------------------
+// Eliminar insumo (solo admin)
+// ------------------------------------------------------------
+// Se borra SOLO el documento del insumo. Sus movimientos en
+// "movimientosInsumos" se conservan (guardan nombreInsumo), así las compras
+// siguen en Reportes y en el "Historial general" con la etiqueta "(eliminado)".
+async function eliminarInsumo(i) {
+  const ok = await confirmar(
+    `¿Eliminar el insumo ${i.nombre}? Su historial de compras y salidas se conservará en los reportes.`,
+    "Eliminar", true
+  );
+  if (!ok) return;
+  try {
+    await deleteDoc(doc(db, "insumos", i.id));
+    aviso(`Insumo "${i.nombre}" eliminado. Su historial se conserva.`);
+  } catch (err) {
+    console.error(err);
+    aviso(mensajeError(err), "error");
+  }
+}
 
 // ------------------------------------------------------------
 // Agregar / editar insumo
@@ -401,16 +425,27 @@ formSalida.addEventListener("submit", async (e) => {
 // ------------------------------------------------------------
 // Historial de movimientos de un insumo
 // ------------------------------------------------------------
+// Dos modos con el mismo modal:
+//  - De un insumo: se cargan todos sus movimientos y se filtran por fecha aquí.
+//  - General (insumoActual = null): movimientos de TODOS los insumos del rango,
+//    incluidos los de insumos eliminados (marcados "(eliminado)"). Se consulta
+//    por fecha al presionar "Filtrar" para leer solo lo necesario.
 let movimientosInsumo = [];
+let historialGeneral = false;
 
-async function abrirHistorial(i) {
-  insumoActual = i;
-  document.getElementById("tituloHistorial").textContent = `Historial · ${i.nombre}`;
+function prepararHistorial(titulo) {
+  document.getElementById("tituloHistorial").textContent = titulo;
   const hoy = claveDiaLima();
   inHistDesde.value = sumarDias(hoy, -30);
   inHistHasta.value = hoy;
-  tablaHistorial.innerHTML = '<tr><td colspan="7" class="vacio">Cargando…</td></tr>';
+  tablaHistorial.innerHTML = '<tr><td colspan="8" class="vacio">Cargando…</td></tr>';
   abrirModal("modalHistorial");
+}
+
+async function abrirHistorial(i) {
+  insumoActual = i;
+  historialGeneral = false;
+  prepararHistorial(`Historial · ${i.nombre}`);
   try {
     // Un solo campo en el filtro (insumoId): no requiere índice compuesto
     const snap = await getDocs(query(collection(db, "movimientosInsumos"), where("insumoId", "==", i.id)));
@@ -419,11 +454,42 @@ async function abrirHistorial(i) {
     dibujarHistorial();
   } catch (err) {
     console.error(err);
-    tablaHistorial.innerHTML = `<tr><td colspan="7" class="vacio">No se pudo cargar: ${escaparHTML(mensajeError(err))}</td></tr>`;
+    tablaHistorial.innerHTML = `<tr><td colspan="8" class="vacio">No se pudo cargar: ${escaparHTML(mensajeError(err))}</td></tr>`;
   }
 }
 
-formHistorial.addEventListener("submit", (e) => { e.preventDefault(); dibujarHistorial(); });
+document.getElementById("btnHistorialGeneral").addEventListener("click", () => {
+  insumoActual = null;
+  historialGeneral = true;
+  prepararHistorial("Historial general de insumos");
+  cargarHistorialGeneral();
+});
+
+async function cargarHistorialGeneral() {
+  if (!inHistDesde.value || !inHistHasta.value) return aviso("Elige las dos fechas.", "error");
+  if (inHistDesde.value > inHistHasta.value) return aviso("La fecha \"Desde\" no puede ser mayor que \"Hasta\".", "error");
+  tablaHistorial.innerHTML = '<tr><td colspan="8" class="vacio">Cargando…</td></tr>';
+  try {
+    // Un solo campo (fecha) en el filtro: no requiere índice compuesto
+    const snap = await getDocs(query(
+      collection(db, "movimientosInsumos"),
+      where("fecha", ">=", Timestamp.fromDate(inicioDiaLima(inHistDesde.value))),
+      where("fecha", "<", Timestamp.fromDate(inicioDiaLima(sumarDias(inHistHasta.value, 1)))),
+      orderBy("fecha", "desc")
+    ));
+    movimientosInsumo = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    dibujarHistorial();
+  } catch (err) {
+    console.error(err);
+    tablaHistorial.innerHTML = `<tr><td colspan="8" class="vacio">No se pudo cargar: ${escaparHTML(mensajeError(err))}</td></tr>`;
+  }
+}
+
+formHistorial.addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (historialGeneral) cargarHistorialGeneral();
+  else dibujarHistorial();
+});
 
 function dibujarHistorial() {
   const desde = inicioDiaLima(inHistDesde.value);
@@ -432,17 +498,23 @@ function dibujarHistorial() {
     const f = m.fecha?.toDate?.();
     return f && f >= desde && f < hasta;
   });
-  const unidad = insumoActual?.unidad || "";
   const nombres = { compra: "Compra", salida: "Salida", ajuste: "Ajuste" };
-  tablaHistorial.innerHTML = lista.length ? lista.map((m) => `
+  tablaHistorial.innerHTML = lista.length ? lista.map((m) => {
+    // Unidad e insumo actual; si ya no existe, el movimiento conserva el nombre
+    const ins = insumos.find((x) => x.id === m.insumoId);
+    const unidad = ins?.unidad || "";
+    const nombre = `${escaparHTML(m.nombreInsumo || ins?.nombre || "—")}${ins ? "" : ' <small class="texto-gris">(eliminado)</small>'}`;
+    return `
     <tr>
       <td>${fechaHora(m.fecha)}</td>
+      <td>${nombre}</td>
       <td><span class="etiqueta-estado ${m.tipo === "compra" ? "verde" : m.tipo === "salida" ? "rojo" : "amarillo"}">${nombres[m.tipo] || m.tipo}</span>${m.pagadoConCaja ? '<br><small>Pagado con caja</small>' : ""}</td>
       <td class="num">${m.tipo === "compra" || m.motivo === "stock inicial" ? "+" : "−"}${cantidadConUnidad(m.cantidad, unidad)}</td>
       <td class="num">${soles(m.costoTotal)}</td>
       <td>${cantidadConUnidad(m.stockAnterior)} → ${cantidadConUnidad(m.stockNuevo, unidad)}</td>
       <td>${escaparHTML(m.motivo || "")}</td>
       <td>${escaparHTML(m.usuarioNombre || "")}</td>
-    </tr>`).join("")
-    : '<tr><td colspan="7" class="vacio">Sin movimientos en ese rango.</td></tr>';
+    </tr>`;
+  }).join("")
+    : '<tr><td colspan="8" class="vacio">Sin movimientos en ese rango.</td></tr>';
 }
