@@ -115,6 +115,7 @@ const MENU = [
   { href: "productos.html", texto: "Productos", soloAdmin: true },
   { href: "insumos.html", texto: "Insumos", soloAdmin: true },
   { href: "trabajadores.html", texto: "Trabajadores", soloAdmin: true },
+  { href: "ventas-anteriores.html", texto: "Ventas anteriores", soloAdmin: true },
   { href: "reportes.html", texto: "Reportes", soloAdmin: true }
 ];
 
@@ -441,6 +442,10 @@ const metodosEnCero = () => ({ efectivo: 0, yape: 0, plin: 0, tarjeta: 0 });
  *  - Ventas al crédito: NO suman; solo se informan en "creditosOtorgados".
  *  - Cobros de créditos: suman al total y al método con que pagaron.
  *    Un crédito cuenta como 1 venta recién cuando se paga completo.
+ *  - Ventas resumidas del día (tipo "resumen", registro manual): suman al
+ *    total y a cada método según totalPorMetodo, pero NO cuentan en numVentas
+ *    (no sirven para el ticket promedio); se informan en "resumenes".
+ *    Nunca aparecen en Caja porque no pertenecen a ninguna caja.
  * @param {Array} ventas  Documentos de "ventas".
  * @param {Array} cobros  Documentos de "cobros" (opcional).
  */
@@ -451,10 +456,19 @@ export function calcularTotales(ventas, cobros = []) {
   let numVentas = 0;
   let creditosCantidad = 0;
   let creditosMonto = 0;
+  let resumenesCantidad = 0;
+  let resumenesTotal = 0;
 
   for (const v of ventas) {
     if (v.anulada) continue;
     const monto = Number(v.total) || 0;
+    if (v.tipo === "resumen") {
+      resumenesCantidad++;
+      resumenesTotal += monto;
+      totalVentasDirectas += monto;
+      for (const m of METODOS) porMetodo[m] += Number(v.totalPorMetodo?.[m]) || 0;
+      continue;
+    }
     if (v.metodoPago === "credito") {
       creditosCantidad++;
       creditosMonto += monto;
@@ -487,7 +501,8 @@ export function calcularTotales(ventas, cobros = []) {
     porMetodo,
     totalVentasDirectas: redondear(totalVentasDirectas),
     cobros: { total: redondear(totalCobros), cantidad: cobros.length, porMetodo: cobrosPorMetodo },
-    creditosOtorgados: { cantidad: creditosCantidad, monto: redondear(creditosMonto) }
+    creditosOtorgados: { cantidad: creditosCantidad, monto: redondear(creditosMonto) },
+    resumenes: { cantidad: resumenesCantidad, total: redondear(resumenesTotal) }
   };
 }
 

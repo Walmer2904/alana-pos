@@ -57,13 +57,15 @@ let ordenProductos = "cantidad";
 let porDia = [];         // [{ clave, total, costo, ganancia, num }]
 let movimientos = [];    // filas de la tabla detallada (ventas + cobros)
 let vendidosSinCosto = new Set();
+let diasResumenSinCosto = new Set(); // días con ventas resumidas sin costo (ganancia inexacta)
+let manualesInfo = { total: 0, detalladas: 0, resumenes: 0 };
 let grafico = null;
 
 // Para ahorrar lecturas del plan gratuito, los datos se cargan SOLO al
 // presionar "Generar reporte" (no al abrir la página ni al cambiar filtros).
 protegerPagina(() => {
   aplicarPeriodo("hoy");   // solo deja elegido "Hoy"; no consulta nada
-  tablaDetalle.innerHTML = '<tr><td colspan="7" class="vacio">Elige el periodo y presiona "Generar reporte".</td></tr>';
+  tablaDetalle.innerHTML = '<tr><td colspan="8" class="vacio">Elige el periodo y presiona "Generar reporte".</td></tr>';
 }, true);
 
 // ------------------------------------------------------------
@@ -173,7 +175,7 @@ function consultaPorFecha(coleccion, inicio, fin) {
 async function cargar(r) {
   rango = r;
   textoRango.textContent = textoDelRango(r);
-  tablaDetalle.innerHTML = '<tr><td colspan="7" class="vacio">Cargando…</td></tr>';
+  tablaDetalle.innerHTML = '<tr><td colspan="8" class="vacio">Cargando…</td></tr>';
   btnExcel.disabled = true;
 
   // Inicio del día "desde" y del día siguiente a "hasta", en hora de Lima
@@ -207,7 +209,7 @@ async function cargar(r) {
   } catch (error) {
     console.error(error);
     aviso(mensajeError(error), "error");
-    tablaDetalle.innerHTML = `<tr><td colspan="7" class="vacio">No se pudo cargar: ${escaparHTML(mensajeError(error))}</td></tr>`;
+    tablaDetalle.innerHTML = `<tr><td colspan="8" class="vacio">No se pudo cargar: ${escaparHTML(mensajeError(error))}</td></tr>`;
   }
 }
 
@@ -253,10 +255,27 @@ function procesar() {
   totales = calcularTotales(ventas, cobros);
   const anuladas = ventas.length - validas.length;
   vendidosSinCosto = new Set();
+  diasResumenSinCosto = new Set();
+
+  // --- Ventas manuales (registradas en "Ventas anteriores") ---
+  const manualesValidas = validas.filter((v) => v.registroManual === true);
+  const resumenesValidos = manualesValidas.filter((v) => v.tipo === "resumen").length;
+  manualesInfo = {
+    total: manualesValidas.length,
+    resumenes: resumenesValidos,
+    detalladas: manualesValidas.length - resumenesValidos
+  };
 
   // --- Costo de producción de lo cobrado ---
   let costoTotal = 0;
   for (const v of validas) {
+    if (v.tipo === "resumen") {
+      // Venta resumida: usa su costoTotal; si no tiene, ese día queda inexacto
+      v.costoVenta = typeof v.costoTotal === "number" ? v.costoTotal : 0;
+      if (typeof v.costoTotal !== "number") diasResumenSinCosto.add(claveDiaLima(v.fecha));
+      costoTotal += v.costoVenta;
+      continue;
+    }
     const c = costoDeItems(v.items);
     v.costoVenta = c.total;
     costoTotal += c.total;
@@ -286,10 +305,19 @@ function procesar() {
 
   // --- Indicadores principales (dinero cobrado) ---
   document.getElementById("kpiTotal").textContent = soles(totales.total);
-  document.getElementById("kpiNum").textContent = totales.numVentas;
-  document.getElementById("kpiPromedio").textContent =
-    soles(totales.numVentas ? totales.total / totales.numVentas : 0);
+  // Las ventas resumidas cuentan como 1 registro cada una, pero no entran
+  // en el ticket promedio (no se sabe cuántas ventas tuvo ese día).
+  const rs = totales.resumenes;
+  document.getElementById("kpiNum").textContent = totales.numVentas + rs.cantidad;
+  document.getElementById("kpiNumDetalle").textContent =
+    rs.cantidad ? `${totales.numVentas} venta(s) + ${rs.cantidad} resumen(es) del día` : "";
+  document.getElementById("kpiPromedio").textContent = soles(ticketPromedio());
+  document.getElementById("kpiPromedioDetalle").textContent = rs.cantidad ? "Sin contar las ventas resumidas" : "";
   document.getElementById("kpiAnuladas").textContent = anuladas;
+  document.getElementById("kpiManuales").textContent = manualesInfo.total;
+  document.getElementById("kpiManualesDetalle").textContent = manualesInfo.total
+    ? `${manualesInfo.detalladas} detallada(s) · ${manualesInfo.resumenes} resumida(s)`
+    : "Registradas en \"Ventas anteriores\"";
   document.getElementById("resumenMetodos").innerHTML = METODOS.map((m) => `
     <div class="indicador">
       <div class="rotulo">${NOMBRES_METODO[m]}</div>
@@ -354,30 +382,44 @@ function procesar() {
 
   // --- Tabla detallada: ventas normales + cobros de créditos ---
   movimientos = [
-    ...ventas.map((v) => ({
-      fecha: v.fecha,
-      tipo: "Venta",
-      codigo: v.id.slice(-6).toUpperCase(),
-      detalle: (v.items || []).map((it) => `${it.cantidad}× ${it.nombre}`).join(", "),
-      metodo: v.metodoPago,
-      monto: Number(v.total) || 0,
-      costo: v.anulada ? 0 : (v.costoVenta ?? costoDeItems(v.items).total),
-      recibido: Number(v.montoRecibido) || 0,
-      vuelto: Number(v.vuelto) || 0,
-      usuario: v.usuarioNombre || "",
-      estado: v.anulada ? "Anulada" : "Válida"
-    })),
+    ...ventas.map((v) => {
+      const esResumen = v.tipo === "resumen";
+      const costoAnulada = esResumen ? (Number(v.costoTotal) || 0) : costoDeItems(v.items).total;
+      return {
+        fecha: v.fecha,
+        tipo: "Venta",
+        esResumen,
+        codigo: v.id.slice(-6).toUpperCase(),
+        detalle: esResumen
+          ? `Resumen del día${typeof v.costoTotal === "number" ? "" : " (sin costo)"}${v.observacion ? ` · ${v.observacion}` : ""}`
+          : (v.items || []).map((it) => `${it.cantidad}× ${it.nombre}`).join(", "),
+        metodo: esResumen ? "varios" : v.metodoPago,
+        metodoTexto: esResumen
+          ? METODOS.filter((m) => Number(v.totalPorMetodo?.[m]) > 0)
+            .map((m) => `${NOMBRES_METODO[m]} ${soles(v.totalPorMetodo[m])}`).join(" · ")
+          : (NOMBRES_METODO[v.metodoPago] || v.metodoPago),
+        monto: Number(v.total) || 0,
+        costo: v.anulada ? 0 : (v.costoVenta ?? costoAnulada),
+        recibido: esResumen ? (Number(v.total) || 0) : (Number(v.montoRecibido) || 0),
+        vuelto: Number(v.vuelto) || 0,
+        usuario: v.registroManual ? (v.registradoPor || v.usuarioNombre || "") : (v.usuarioNombre || ""),
+        origen: v.registroManual ? "Manual" : "Sistema",
+        estado: v.anulada ? "Anulada" : "Válida"
+      };
+    }),
     ...cobros.map((c) => ({
       fecha: c.fecha,
       tipo: "Cobro de crédito",
       codigo: String(c.ventaId || c.creditoId || "").slice(-6).toUpperCase(),
       detalle: `${c.nombreCliente} (DNI ${c.dni})${c.completaCredito ? " · crédito cancelado" : " · abono"}`,
       metodo: c.metodo,
+      metodoTexto: NOMBRES_METODO[c.metodo] || c.metodo,
       monto: Number(c.monto) || 0,
       costo: c.costoCobro,
       recibido: Number(c.monto) || 0,
       vuelto: 0,
       usuario: c.usuarioNombre || "",
+      origen: "Sistema",
       estado: "Válida"
     }))
   ].sort((a, b) => (b.fecha?.toMillis?.() || 0) - (a.fecha?.toMillis?.() || 0));
@@ -385,17 +427,24 @@ function procesar() {
   tablaDetalle.innerHTML = movimientos.length
     ? movimientos.map((m) => `
         <tr class="${m.estado === "Anulada" ? "anulada" : ""}">
-          <td>${fechaHora(m.fecha)}</td>
+          <td>${m.esResumen ? soloFecha(m.fecha) : fechaHora(m.fecha)}</td>
           <td>${m.tipo === "Venta" ? m.codigo : `<span class="etiqueta-estado rosa">Cobro</span> ${m.codigo}`}</td>
           <td>${escaparHTML(m.detalle)}</td>
-          <td>${NOMBRES_METODO[m.metodo] || escaparHTML(m.metodo)}</td>
+          <td>${escaparHTML(m.metodoTexto || "—")}</td>
           <td class="num">${soles(m.monto)}</td>
           <td>${escaparHTML(m.usuario || "—")}</td>
+          <td>${m.origen === "Manual" ? '<span class="etiqueta-estado amarillo">Manual</span>' : "Sistema"}</td>
           <td>${m.estado === "Anulada" ? '<span class="etiqueta-estado rojo">Anulada</span>' : '<span class="etiqueta-estado verde">Válida</span>'}</td>
         </tr>`).join("")
-    : '<tr><td colspan="7" class="vacio">No hay ventas ni cobros en este periodo.</td></tr>';
+    : '<tr><td colspan="8" class="vacio">No hay ventas ni cobros en este periodo.</td></tr>';
 
   btnExcel.disabled = movimientos.length === 0 && pagosTrab.length === 0 && compras.length === 0;
+}
+
+/** Ticket promedio sin las ventas resumidas (no se sabe cuántas ventas tuvo ese día). */
+function ticketPromedio() {
+  if (!totales.numVentas) return 0;
+  return redondear((totales.total - totales.resumenes.total) / totales.numVentas);
 }
 
 function dibujarGanancia() {
@@ -403,7 +452,9 @@ function dibujarGanancia() {
   const claseValor = (n) => (n < 0 ? "texto-perdida" : "");
   document.getElementById("gVentas").textContent = soles(g.ventas);
   document.getElementById("gCosto").textContent = soles(g.costo);
-  document.getElementById("gCostoDetalle").textContent = vendidosSinCosto.size ? "⚠ incompleto: hay productos sin costo" : "";
+  document.getElementById("gCostoDetalle").textContent = vendidosSinCosto.size
+    ? "⚠ incompleto: hay productos sin costo"
+    : diasResumenSinCosto.size ? "⚠ incompleto: hay ventas resumidas sin costo" : "";
   const elBruta = document.getElementById("gBruta");
   elBruta.textContent = soles(g.bruta);
   elBruta.className = `valor ${claseValor(g.bruta)}`;
@@ -422,6 +473,9 @@ function dibujarBanner() {
   if (vendidosSinCosto.size) {
     const nombres = [...vendidosSinCosto].slice(0, 6).map(escaparHTML).join(", ");
     partes.push(`En este periodo se vendieron productos <strong>sin costo registrado</strong> (${nombres}${vendidosSinCosto.size > 6 ? "…" : ""}): el costo y la ganancia salen inexactos (más altos de lo real).`);
+  }
+  if (diasResumenSinCosto.size) {
+    partes.push(`Hay ${diasResumenSinCosto.size} ${diasResumenSinCosto.size === 1 ? "día" : "días"} con ventas resumidas sin costo; la ganancia de esos días no es exacta.`);
   }
   if (enCatalogo) {
     partes.push(`${enCatalogo} producto(s) del catálogo no tienen costo. <a href="productos.html">Regístralo en Productos</a>.`);
@@ -546,14 +600,19 @@ btnExcel.addEventListener("click", () => {
     ["Margen neto (%)", redondear(g.margenNeto)],
     ["Compras de insumos (S/) - informativo, NO se resta", g.compras],
     vendidosSinCosto.size ? ["AVISO: productos vendidos sin costo (ganancia inexacta)", [...vendidosSinCosto].join(", ")] : [],
+    diasResumenSinCosto.size ? ["AVISO: días con ventas resumidas sin costo (ganancia inexacta)", [...diasResumenSinCosto].sort().join(", ")] : [],
     [],
     ["VENTAS"],
     ["Total vendido / cobrado (S/)", totales.total],
     ["  De ventas directas (S/)", totales.totalVentasDirectas],
+    ["    De ellas, ventas resumidas del día (S/)", totales.resumenes.total],
     ["  Cobros de créditos en el periodo (S/)", totales.cobros.total],
-    ["N.º de ventas", totales.numVentas],
-    ["Ticket promedio (S/)", totales.numVentas ? redondear(totales.total / totales.numVentas) : 0],
+    ["N.º de ventas (sin resúmenes)", totales.numVentas],
+    ["Ventas resumidas del día (registros)", totales.resumenes.cantidad],
+    ["Ticket promedio sin resúmenes (S/)", ticketPromedio()],
     ["Ventas anuladas", ventas.filter((v) => v.anulada).length],
+    ["Ventas manuales (no anuladas)", manualesInfo.total],
+    ["  Detalladas / resumidas", `${manualesInfo.detalladas} / ${manualesInfo.resumenes}`],
     [],
     ["Método de pago", "Total (S/)", "De ellos, cobros de créditos (S/)"],
     ...METODOS.map((m) => [NOMBRES_METODO[m], totales.porMetodo[m], totales.cobros.porMetodo[m]]),
@@ -568,16 +627,17 @@ btnExcel.addEventListener("click", () => {
 
   // Hoja 2: Ventas (ventas normales)
   const filasVentas = movimientos.filter((m) => m.tipo === "Venta").map((m) => ({
-    "Fecha y hora": fechaHora(m.fecha),
+    "Fecha y hora": m.esResumen ? soloFecha(m.fecha) : fechaHora(m.fecha),
     "Ticket": m.codigo,
     "Detalle": m.detalle,
-    "Método": NOMBRES_METODO[m.metodo] || m.metodo,
+    "Método": m.metodoTexto,
     "Total (S/)": m.monto,
     "Costo (S/)": m.costo,
     "Ganancia (S/)": m.estado === "Anulada" ? 0 : redondear(m.monto - m.costo),
     "Recibido (S/)": m.recibido,
     "Vuelto (S/)": m.vuelto,
     "Atendió": m.usuario,
+    "Origen": m.origen,
     "Estado": m.estado
   }));
   XLSX.utils.book_append_sheet(libro, XLSX.utils.json_to_sheet(filasVentas.length ? filasVentas : [{ "Sin datos": "" }]), "Ventas");

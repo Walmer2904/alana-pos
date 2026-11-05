@@ -82,9 +82,14 @@
       <h2 id="tituloResumen">Resumen</h2>
       <div class="indicadores">
         <div class="indicador destacado"><div class="rotulo">Total vendido (cobrado)</div><div class="valor" id="kpiTotal">S/ 0.00</div></div>
-        <div class="indicador"><div class="rotulo">N.º de ventas</div><div class="valor" id="kpiNum">0</div></div>
-        <div class="indicador"><div class="rotulo">Ticket promedio</div><div class="valor" id="kpiPromedio">S/ 0.00</div></div>
+        <div class="indicador"><div class="rotulo">N.º de ventas</div><div class="valor" id="kpiNum">0</div><small id="kpiNumDetalle"></small></div>
+        <div class="indicador"><div class="rotulo">Ticket promedio</div><div class="valor" id="kpiPromedio">S/ 0.00</div><small id="kpiPromedioDetalle"></small></div>
         <div class="indicador"><div class="rotulo">Anuladas</div><div class="valor" id="kpiAnuladas">0</div></div>
+        <div class="indicador informativo">
+          <div class="rotulo">Ventas manuales</div>
+          <div class="valor" id="kpiManuales">0</div>
+          <small id="kpiManualesDetalle">Registradas en "Ventas anteriores"</small>
+        </div>
       </div>
       <div class="indicadores">
         <div class="indicador">
@@ -137,11 +142,12 @@
               <th>Método</th>
               <th class="num">Total</th>
               <th>Atendió</th>
+              <th>Origen</th>
               <th>Estado</th>
             </tr>
           </thead>
           <tbody id="tablaDetalle">
-            <tr><td colspan="7" class="vacio">Cargando…</td></tr>
+            <tr><td colspan="8" class="vacio">Cargando…</td></tr>
           </tbody>
         </table>
       </div>

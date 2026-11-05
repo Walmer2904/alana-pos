@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALANA POS · Ventas anteriores</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Kaushan+Script&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+  <link rel="icon" type="image/png" sizes="32x32" href="img/iconos/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="img/iconos/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#141414">
+</head>
+<body class="cargando">
+  <div class="pantalla-carga"><img src="img/logo.png" alt="Cargando ALANA"></div>
+  <header class="barra" id="barra"></header>
+
+  <main class="contenido">
+    <div class="encabezado-pagina">
+      <div>
+        <h1>Ventas anteriores</h1>
+        <p class="texto-gris" style="margin:0">Registra ventas de días pasados que no se cargaron en el sistema.
+          No necesitan caja abierta y no afectan la caja actual ni el historial de cierres.</p>
+      </div>
+    </div>
+
+    <div class="filtros" id="modos" role="group" aria-label="Tipo de registro">
+      <button type="button" class="chip" data-modo="detallada" aria-pressed="true">Venta detallada</button>
+      <button type="button" class="chip" data-modo="resumen" aria-pressed="false">Venta resumida del día</button>
+    </div>
+
+    <!-- Aviso cuando se está editando una venta manual -->
+    <div class="alerta alerta-aviso oculto" id="avisoEdicion" role="status">
+      <span id="textoEdicion">Editando una venta manual.</span>
+      <button type="button" class="btn btn-claro btn-chico" id="btnCancelarEdicion">Cancelar edición</button>
+    </div>
+
+    <!-- ===================== Modo A: venta detallada ===================== -->
+    <section id="modoDetallada" aria-label="Venta detallada">
+      <div class="pos">
+        <!-- Catálogo -->
+        <section aria-label="Productos">
+          <div class="filtros" id="filtros" role="group" aria-label="Filtrar por categoría"></div>
+          <div class="buscador">
+            <label for="buscar" class="sr-only">Buscar producto</label>
+            <input type="search" id="buscar" placeholder="Buscar producto…" autocomplete="off">
+          </div>
+          <div class="catalogo" id="catalogo">
+            <p class="vacio">Cargando productos…</p>
+          </div>
+        </section>
+
+        <!-- Pedido -->
+        <aside class="tarjeta pedido pedido-manual" aria-labelledby="tituloPedido">
+          <form id="formDetallada" novalidate>
+            <div class="pedido-cabecera">
+              <h2 id="tituloPedido">Venta</h2>
+              <button type="button" class="btn btn-claro btn-chico" id="btnVaciar">Vaciar</button>
+            </div>
+            <div class="campo zona-manual">
+              <label for="fechaHoraVenta">Fecha y hora de la venta</label>
+              <input type="datetime-local" id="fechaHoraVenta" required>
+              <small>Hora de Lima. No puede ser una fecha futura.</small>
+            </div>
+            <ul class="pedido-items" id="pedidoItems" aria-live="polite"></ul>
+            <div class="zona-manual">
+            <p class="nota-pequena">Puedes corregir el precio unitario si en esa fecha era distinto.</p>
+
+            <span class="etiqueta" id="etiquetaMetodo" style="display:block;margin-top:.75rem">Método de pago</span>
+            <div class="metodos" role="group" aria-labelledby="etiquetaMetodo" id="metodos">
+              <button type="button" class="metodo-btn" data-metodo="efectivo" aria-pressed="true">Efectivo</button>
+              <button type="button" class="metodo-btn" data-metodo="yape" aria-pressed="false">Yape</button>
+              <button type="button" class="metodo-btn" data-metodo="plin" aria-pressed="false">Plin</button>
+              <button type="button" class="metodo-btn" data-metodo="tarjeta" aria-pressed="false">Tarjeta</button>
+              <button type="button" class="metodo-btn metodo-credito" data-metodo="credito" aria-pressed="false" id="btnMetodoCredito">Crédito</button>
+            </div>
+
+            <!-- Datos del cliente: solo para crédito -->
+            <div id="zonaCredito" class="oculto">
+              <div class="campo">
+                <label for="dniCliente">DNI del cliente <small class="contador-dni" id="contadorDni" aria-live="polite">0/8</small></label>
+                <input type="text" id="dniCliente" inputmode="numeric" maxlength="8" pattern="[0-9]{8}" autocomplete="off" placeholder="8 números">
+              </div>
+              <div class="campo">
+                <label for="nombreCliente">Nombre completo</label>
+                <input type="text" id="nombreCliente" maxlength="80" autocomplete="off">
+              </div>
+              <div id="infoCliente" class="info-cliente oculto" aria-live="polite"></div>
+              <p class="nota-pequena">El crédito queda pendiente con esa fecha y no cuenta en reportes hasta que se pague.</p>
+            </div>
+            </div>
+
+            <div class="pedido-pie">
+              <div class="total-fila">
+                <span class="rotulo">TOTAL</span>
+                <span class="total-grande" id="totalPedido">S/ 0.00</span>
+              </div>
+              <div id="errorDetallada" class="mensaje-error oculto" role="alert"></div>
+              <button type="submit" class="btn btn-primario btn-grande" id="btnGuardarDetallada">Guardar venta</button>
+            </div>
+          </form>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ===================== Modo B: venta resumida ===================== -->
+    <section class="tarjeta oculto" id="modoResumen" aria-labelledby="tituloResumen">
+      <h2 id="tituloResumen">Venta resumida del día</h2>
+      <p class="texto-gris" style="margin-top:0">Para días en los que solo tienes el total vendido por método de pago.
+        Se guarda como un solo registro con la fecha de ese día (23:59).</p>
+      <form id="formResumen" novalidate style="max-width:720px">
+        <div class="campo" style="max-width:260px">
+          <label for="resFecha">Fecha</label>
+          <input type="date" id="resFecha" required>
+        </div>
+        <div class="cuadricula-2" style="gap:.75rem">
+          <div class="campo"><label for="resEfectivo">Efectivo (S/)</label><input type="number" id="resEfectivo" min="0" step="0.10" inputmode="decimal" placeholder="0.00"></div>
+          <div class="campo"><label for="resYape">Yape (S/)</label><input type="number" id="resYape" min="0" step="0.10" inputmode="decimal" placeholder="0.00"></div>
+          <div class="campo"><label for="resPlin">Plin (S/)</label><input type="number" id="resPlin" min="0" step="0.10" inputmode="decimal" placeholder="0.00"></div>
+          <div class="campo"><label for="resTarjeta">Tarjeta (S/)</label><input type="number" id="resTarjeta" min="0" step="0.10" inputmode="decimal" placeholder="0.00"></div>
+        </div>
+        <div class="campo" style="max-width:340px">
+          <label for="resCosto">Costo de producción total del día (S/) <small>(opcional)</small></label>
+          <input type="number" id="resCosto" min="0" step="0.10" inputmode="decimal" placeholder="Déjalo vacío si no lo sabes">
+          <small>Sin costo, la ganancia de ese día no será exacta en Reportes.</small>
+        </div>
+        <div class="campo">
+          <label for="resObservacion">Observación (opcional)</label>
+          <textarea id="resObservacion" maxlength="300" placeholder="Ej.: ventas del cuaderno, sistema sin internet"></textarea>
+        </div>
+        <div class="total-fila" style="margin:.5rem 0 1rem">
+          <span class="rotulo">TOTAL DEL DÍA</span>
+          <span class="total-grande" id="resTotal">S/ 0.00</span>
+        </div>
+        <div id="errorResumen" class="mensaje-error oculto" role="alert"></div>
+        <button type="submit" class="btn btn-primario btn-grande" id="btnGuardarResumen">Guardar venta resumida</button>
+      </form>
+    </section>
+
+    <!-- ===================== Lista de ventas manuales ===================== -->
+    <section class="tarjeta" style="margin-top:1.25rem" aria-labelledby="tituloLista">
+      <h2 id="tituloLista">Ventas manuales registradas</h2>
+      <form class="rango-personalizado" id="formLista" novalidate style="margin-bottom:1rem">
+        <div class="campo">
+          <label for="listaDesde">Desde (fecha de la venta)</label>
+          <input type="date" id="listaDesde" required>
+        </div>
+        <div class="campo">
+          <label for="listaHasta">Hasta</label>
+          <input type="date" id="listaHasta" required>
+        </div>
+        <button type="submit" class="btn btn-primario">Buscar</button>
+      </form>
+      <div class="tabla-contenedor">
+        <table class="tabla">
+          <thead>
+            <tr>
+              <th>Fecha de la venta</th>
+              <th>Tipo</th>
+              <th>Detalle</th>
+              <th>Método</th>
+              <th class="num">Total</th>
+              <th>Registrado por</th>
+              <th>Registrado el</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tablaManuales">
+            <tr><td colspan="9" class="vacio">Elige el rango y presiona "Buscar".</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="js/ventas-anteriores.js"></script>
+</body>
+</html>
