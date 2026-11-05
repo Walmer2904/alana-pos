@@ -16,18 +16,51 @@ Publicado en: https://walmer2904.github.io/alana-pos/
 | `index.html` | Todos | Inicio de sesión con correo y contraseña |
 | `ventas.html` | Todos | Punto de venta: catálogo, pedido, cobro (efectivo, Yape, Plin, tarjeta o **crédito**), ticket, ventas del turno (el admin puede anular) |
 | `creditos.html` | Todos | Créditos pendientes en tiempo real, búsqueda por DNI/nombre, registrar pagos y abonos, comprobante, historial de pagados/anulados |
-| `caja.html` | Todos | Apertura y cierre de caja (una sola caja abierta para todas las PCs), cobros de créditos, egresos, historial |
+| `caja.html` | Todos | Apertura y cierre de caja (una sola caja abierta para todas las PCs). El cajero hace **cierre ciego**; el admin ve montos, egresos e historial |
 | `productos.html` | Admin | Productos con foto, precio, **costo de producción** y ganancia por unidad |
-| `insumos.html` | Admin | Inventario de insumos: stock, compras (costo promedio), salidas/ajustes, historial, stock bajo |
+| `insumos.html` | Admin | Inventario de insumos: stock, compras (costo promedio), salidas/ajustes, eliminar, historial por insumo e historial general, stock bajo |
 | `trabajadores.html` | Admin | Trabajadores, pagos (sueldo, adelanto, bono), historial y comprobante con firma |
+| `ventas-anteriores.html` | Admin | Ventas de fechas pasadas: **detallada** (productos, con fecha y hora) o **resumida del día** (montos por método); lista para editar o anular |
 | `reportes.html` | Admin | Ventas cobradas, costo, ganancia bruta y neta, pagos a trabajadores, compras de insumos, productos más vendidos, gráfico, Excel |
+
+## Permisos: admin vs cajero
+
+El rol se lee de `usuarios/{uid}`. Si un usuario logueado **no tiene documento**, entra como **cajero** (el menor privilegio) con un aviso.
+La interfaz oculta lo que el cajero no puede hacer, y las **reglas de Firestore** lo bloquean también desde la consola del navegador.
+
+| Acción | Admin | Cajero |
+|---|:---:|:---:|
+| Vender con todos los métodos (incluido crédito con DNI) e imprimir tickets | ✔ | ✔ |
+| Ver las ventas del turno (caja abierta) | ✔ | ✔ |
+| Abrir caja y cerrar caja | ✔ | ✔ (cierre ciego) |
+| Ver el efectivo esperado y los montos del turno antes de cerrar | ✔ | ✘ (los ve al confirmar el cierre) |
+| Ver el historial de cierres / modificar un cierre ya cerrado | ✔ | ✘ |
+| Ver créditos pendientes, buscar, ver detalle, registrar pagos e imprimir comprobante | ✔ | ✔ |
+| Anular ventas o créditos | ✔ | ✘ |
+| Cambiar precios al vender o aplicar descuentos | ✘ (en Ventas) / ✔ (en Ventas anteriores) | ✘ |
+| Registrar ventas con fecha pasada o manuales (Ventas anteriores) | ✔ | ✘ |
+| Productos: crear, editar, desactivar, eliminar | ✔ | ✘ (solo los ve en Ventas) |
+| Insumos, Trabajadores y Reportes | ✔ | ✘ |
+| Ver costos de producción, ganancias o márgenes en pantalla | ✔ | ✘ |
+| Eliminar ventas, créditos, clientes, cobros, egresos o movimientos | ✘ | ✘ |
+
+Si el cajero escribe a mano la dirección de una página de admin (por ejemplo `reportes.html`), vuelve a Ventas con el aviso
+"No tienes permiso para esta sección". En la barra superior se ven el nombre y el rol del usuario.
+
+Límites de las reglas (Firestore no puede hacer más que esto):
+- Firestore no oculta campos sueltos: el costo de producción está dentro de cada producto y de cada item de venta, así que un
+  cajero con conocimientos técnicos podría leerlo desde la consola del navegador (en pantalla nunca se le muestra).
+- Las reglas no pueden recorrer los items de una venta para comparar cada precio con el catálogo. El cajero no tiene forma de
+  cambiar precios en la pantalla, pero desde la consola podría crear una venta con precios alterados (quedaría con su nombre,
+  en la caja abierta y con la hora real).
+- El efectivo esperado del cierre lo calcula la PC que cierra. El admin puede comprobarlo con las ventas de esa caja.
 
 ## Estructura
 
 ```
 alana-pos/
 ├── index.html, ventas.html, creditos.html, caja.html, productos.html,
-│   insumos.html, trabajadores.html, reportes.html
+│   insumos.html, trabajadores.html, ventas-anteriores.html, reportes.html
 ├── manifest.webmanifest   Para instalar el sistema como app
 ├── css/estilos.css        Estilos compartidos (incluye impresión de ticket 80 mm)
 ├── img/                   Logo, íconos y patrón de dibujos de la pizarra
@@ -36,7 +69,7 @@ alana-pos/
 │                          validación de DNI, costos, egresos
 ├── js/login.js            Inicio de sesión
 ├── js/ventas.js, js/creditos.js, js/caja.js, js/productos.js,
-│   js/insumos.js, js/trabajadores.js, js/reportes.js
+│   js/insumos.js, js/trabajadores.js, js/ventas-anteriores.js, js/reportes.js
 └── firestore.rules        Reglas de seguridad (copiar a la consola de Firebase)
 ```
 
@@ -66,6 +99,20 @@ contador "5/8". Las reglas de Firestore también lo exigen. En Créditos, el adm
   cobros de créditos en efectivo − egresos en efectivo**. El cierre guarda el total y el detalle de egresos.
 - `egresos` existe aparte porque `movimientosInsumos` y `pagosTrabajadores` son solo para admin, mientras que la Caja también la usa el cajero.
 - Los trabajadores se **desactivan**, no se eliminan. Los movimientos de insumos y pagos a trabajadores nunca se borran.
+- Un insumo se puede **desactivar** (se oculta y se puede reactivar) o **eliminar** (se borra para siempre). Al eliminarlo
+  se conservan sus movimientos (guardan `nombreInsumo`): siguen en Reportes y en el "Historial general" con la etiqueta "(eliminado)".
+
+## Ventas anteriores (solo admin)
+
+- **Detallada:** como el punto de venta, con fecha y hora obligatorias (no futuras) y precio editable por línea. Se guarda en
+  `ventas` con `registroManual: true`, `registradoEn`, `registradoPor` y `cierreId: null`. No necesita caja abierta y no afecta la caja.
+  Si es al crédito, el crédito queda **pendiente** con esa fecha y no cuenta en reportes hasta que se pague.
+- **Resumida del día:** montos por método (al menos uno mayor a 0), costo total opcional y observación. Se guarda como un
+  registro `tipo: "resumen"` con fecha de ese día a las 23:59 (Lima) e `items: []`. Si ya hay ventas de esa fecha, avisa antes de guardar.
+- En Reportes las ventas manuales cuentan en su fecha. Las resumidas suman al total, a cada método y al gráfico por día; cuentan
+  como 1 registro; no entran en el ticket promedio ni en "más vendidos". Si no tienen costo, aparece el aviso
+  "Hay X días con ventas resumidas sin costo". La tabla y el Excel tienen la columna **Origen** (Sistema / Manual).
+- Desde esta página solo se editan o anulan ventas manuales. Una venta manual al crédito no se edita: se anula (si no tiene pagos) y se registra de nuevo.
 
 ## Ventas al crédito: cómo se cuentan
 
@@ -82,6 +129,8 @@ contador "5/8". Las reglas de Firestore también lo exigen. En Créditos, el adm
 - `usuarios/{uid}`: `{ nombre, rol: "admin" | "cajero" }`. Se crean a mano desde la consola.
 - `productos`: `{ nombre, precio, costo, categoria, imagen (base64 JPEG ≤ ~200 KB), activo, creadoEn }`
 - `ventas`: `{ fecha, items[{productoId, nombre, precio, cantidad, subtotal, costoUnitario, costoSubtotal}], total, metodoPago ("efectivo"|"yape"|"plin"|"tarjeta"|"credito"), montoRecibido, vuelto, usuarioId, usuarioNombre, cierreId, anulada }`. Las de crédito además llevan `dni`, `nombreCliente` y `creditoId`.
+  Las manuales llevan `registroManual: true, registradoEn, registradoPor, cierreId: null` (y `editadoEn, editadoPor` si se corrigieron).
+  Las resumidas: `{ tipo: "resumen", fecha, totalPorMetodo {efectivo, yape, plin, tarjeta}, total, costoTotal (o null), items: [], observacion, registroManual: true, ... }`.
 - `creditos`: `{ ventaId, dni, nombreCliente, items, total, saldoPendiente, estado ("pendiente"|"pagado"|"anulado"), fecha, usuarioNombre, cierreId, pagos[{monto, metodo, fecha, usuarioNombre, cierreId}], fechaPago }`
 - `clientes/{dni}`: `{ dni, nombre, actualizadoEn }`
 - `cobros`: `{ creditoId, ventaId, dni, nombreCliente, monto, metodo, fecha, cierreId, usuarioNombre, completaCredito, items (solo si completa el crédito), totalCredito, costoCredito, costoCompleto }`
@@ -90,7 +139,7 @@ contador "5/8". Las reglas de Firestore también lo exigen. En Créditos, el adm
 - `trabajadores`: `{ nombre, dni, cargo, tipoPago, montoAcordado, activo, fechaIngreso }`
 - `pagosTrabajadores`: `{ trabajadorId, nombreTrabajador, monto, concepto, periodo, metodo, fecha, observacion, usuarioNombre, cierreId, pagadoConCaja }`
 - `egresos`: `{ tipo ("insumo"|"trabajador"), descripcion, monto, metodo: "efectivo", fecha, cierreId, referenciaId, usuarioNombre }`
-- `cierres`: `{ estado, fechaApertura, fechaCierre, montoInicial, totalVentas, totalPorMetodo, efectivoEsperado, efectivoContado, diferencia, numVentas, creditosOtorgados {cantidad, monto}, cobrosCreditos {total, cantidad, efectivo, yape, plin, tarjeta}, egresos {total, cantidad, insumos, trabajadores, detalle[]}, usuarioApertura, usuarioCierre, observacion }`
+- `cierres`: `{ estado, fechaApertura, fechaCierre, montoInicial, totalVentas, totalPorMetodo, efectivoEsperado, efectivoContado, diferencia, numVentas, creditosOtorgados {cantidad, monto}, cobrosCreditos {total, cantidad, efectivo, yape, plin, tarjeta}, egresos {total, cantidad, insumos, trabajadores, detalle[]}, usuarioApertura, usuarioCierre, rolCierre ("admin"|"cajero"), observacion }`
 - `config/cajaActual`: `{ cierreId }`, el id de la caja abierta (o `null`). Se cambia con transacciones para que nunca haya dos cajas abiertas.
 
 Ninguna consulta necesita índices compuestos: todas filtran por un solo campo (`fecha`, `cierreId`, `estado`, `dni`, `insumoId` o `trabajadorId`) y el resto se ordena o filtra en el navegador.
