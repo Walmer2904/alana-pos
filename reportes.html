@@ -23,9 +23,16 @@
         <h1>Reportes</h1>
         <p class="texto-gris" id="textoRango" style="margin:0"></p>
       </div>
-      <div class="acciones-fila no-imprimir">
-        <button class="btn btn-acento" id="btnExcel" disabled>Exportar a Excel</button>
-        <button class="btn btn-claro" id="btnImprimir">Imprimir</button>
+      <div class="no-imprimir descarga-reporte">
+        <div class="acciones-fila">
+          <button class="btn btn-primario btn-grande" id="btnPdf">Descargar PDF</button>
+          <button class="btn btn-claro btn-chico" id="btnExcel" disabled title="Para el contador">Exportar a Excel</button>
+          <button class="btn btn-claro btn-chico" id="btnImprimir">Imprimir</button>
+        </div>
+        <div class="opciones-pdf">
+          <label class="interruptor"><input type="checkbox" id="pdfDetalle"> Incluir detalle de cada venta</label>
+          <label class="interruptor"><input type="checkbox" id="pdfAnuladas" disabled> Incluir anuladas</label>
+        </div>
       </div>
     </div>
 

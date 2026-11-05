@@ -645,6 +645,15 @@ dialog.modal-ancho { width: min(900px, calc(100vw - 2rem)); }
 .producto-btn.agotado { opacity: .55; cursor: not-allowed; filter: grayscale(.6); }
 .producto-btn.agotado:hover, .producto-btn.agotado:active { transform: none; box-shadow: var(--sombra-sticker); }
 
+/* ---------- 22. Descarga de reportes (PDF / Excel) ---------- */
+.descarga-reporte { display: flex; flex-direction: column; align-items: flex-end; gap: .4rem; }
+.opciones-pdf { display: flex; flex-wrap: wrap; gap: .25rem 1rem; justify-content: flex-end; font-size: .9rem; }
+.opciones-pdf .interruptor { margin: 0; }
+@media (max-width: 760px) {
+  .descarga-reporte { align-items: stretch; }
+  .opciones-pdf { justify-content: flex-start; }
+}
+
 /* ---------- 19. Elementos según el rol ---------- */
 /* body.rol-cajero lo pone protegerPagina(). Además de ocultar, el JS
    no escribe en pantalla los datos de admin cuando el usuario es cajero. */

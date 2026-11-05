@@ -21,7 +21,7 @@ Publicado en: https://walmer2904.github.io/alana-pos/
 | `insumos.html` | Admin | **Inventario** con dos pestañas: *Insumos* (stock, compras con costo promedio, salidas/ajustes, eliminar, historiales) y *Bebidas y productos con stock* (ingresos, ajustes, historial, valor del stock) |
 | `trabajadores.html` | Admin | Trabajadores, pagos (sueldo, adelanto, bono), historial y comprobante con firma |
 | `ventas-anteriores.html` | Admin | Ventas de fechas pasadas: **detallada** (productos, con fecha y hora) o **resumida del día** (montos por método); lista para editar o anular |
-| `reportes.html` | Admin | Ventas cobradas, costo, ganancia bruta y neta, pagos a trabajadores, compras de insumos, productos más vendidos, gráfico, Excel |
+| `reportes.html` | Admin | Ventas cobradas, costo, ganancia bruta y neta, pagos a trabajadores, compras de insumos y bebidas, productos más vendidos, gráfico, **PDF** (para el cliente) y Excel (para el contador) |
 
 ## Permisos: admin vs cajero
 
@@ -73,6 +73,7 @@ alana-pos/
 ├── js/ventas.js, js/creditos.js, js/caja.js, js/productos.js,
 │   js/insumos.js, js/stock.js (pestaña de bebidas del Inventario), js/trabajadores.js,
 │   js/ventas-anteriores.js, js/reportes.js
+├── js/pdf.js              PDF con jsPDF (reporte de ventas y cierre de caja)
 └── firestore.rules        Reglas de seguridad (copiar a la consola de Firebase)
 ```
 
@@ -197,6 +198,19 @@ Firebase > Authentication > Configuración > **Dominios autorizados** (o abre la
 
 El archivo `firestore.rules` tiene las reglas completas. Cada vez que cambie, cópialo en
 Firebase > Firestore Database > **Reglas** y presiona **Publicar**.
+
+## Reporte en PDF y PDF de cierre de caja
+
+- En Reportes, después de "Generar reporte", el botón **"Descargar PDF"** arma un PDF A4 con los datos que ya están en pantalla
+  (no vuelve a leer Firestore). Si no se generó el reporte, avisa "Primero genera el reporte".
+- Contenido: encabezado con ALANA y RUC en cada página; periodo en palabras, fecha de generación y quién lo generó; tarjetas
+  con ventas cobradas, costo, ganancia bruta (margen), pagos a trabajadores, ganancia neta (verde o roja), n.º de ventas y ticket
+  promedio; ventas por método con porcentajes; créditos; el gráfico de la pantalla; top 10 de productos; ventas por día;
+  información adicional (compras de insumos y bebidas, valor del stock, bebidas bajas o agotadas) y avisos.
+- Casilla **"Incluir detalle de cada venta"** (apagada por defecto) agrega un anexo con cada venta; **"Incluir anuladas"** suma las anuladas.
+- Archivo: `ALANA_Reporte_AAAA-MM-DD_a_AAAA-MM-DD.pdf` (o `ALANA_Reporte_AAAA-MM-DD.pdf` si es un solo día).
+- En Caja, el historial de cierres (solo admin) tiene un botón **"PDF"** por cierre, de una página. La impresión en ticket de 80 mm sigue igual.
+- Librerías: jsPDF 2.5.1 y jspdf-autotable 3.8.2 desde cdnjs; se cargan solo al pedir un PDF (`js/pdf.js`).
 
 ## Impresión de tickets
 

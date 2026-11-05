@@ -16,8 +16,9 @@ import {
   mensajeError, abrirModal, cerrarModal, imprimirTicket, escucharCaja,
   escucharVentasDeCaja, escucharCobrosDeCaja, calcularTotales, refCajaActual,
   METODOS, NOMBRES_METODO, encabezadoTicket, escucharEgresosDeCaja, calcularEgresos,
-  NOMBRES_EGRESO
+  NOMBRES_EGRESO, claveDiaLima
 } from "./comun.js";
+import { cargarJsPDF, DocumentoPDF, dinero, COLOR } from "./pdf.js";
 
 // Elementos
 const estadoCaja = document.getElementById("estadoCaja");
@@ -406,17 +407,117 @@ function dibujarHistorial() {
         <td class="num">${soles(c.efectivoEsperado)}</td>
         <td class="num">${soles(c.efectivoContado)}</td>
         <td class="num"><span class="etiqueta-estado ${info.clase === "cero" ? "verde" : info.clase === "sobrante" ? "amarillo" : "rojo"}">${info.corto}</span></td>
-        <td><button class="btn btn-claro btn-chico" data-imprimir="${c.id}">Imprimir</button></td>
+        <td>
+          <div class="acciones-fila">
+            <button class="btn btn-claro btn-chico" data-imprimir="${c.id}">Imprimir</button>
+            <button class="btn btn-claro btn-chico" data-pdf="${c.id}">PDF</button>
+          </div>
+        </td>
       </tr>`;
   }).join("");
 }
 
-tablaHistorial.addEventListener("click", (e) => {
+tablaHistorial.addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-imprimir]");
-  if (!btn) return;
-  const c = historial.find((h) => h.id === btn.dataset.imprimir);
-  if (c) imprimirTicket(htmlReporteCierre(c));
+  if (btn) {
+    const c = historial.find((h) => h.id === btn.dataset.imprimir);
+    if (c) imprimirTicket(htmlReporteCierre(c));
+    return;
+  }
+  const btnPdf = e.target.closest("button[data-pdf]");
+  if (!btnPdf || !esAdmin()) return;
+  const c = historial.find((h) => h.id === btnPdf.dataset.pdf);
+  if (!c) return;
+  btnPdf.disabled = true;
+  btnPdf.textContent = "…";
+  try {
+    await cargarJsPDF();
+    pdfCierre(c);
+  } catch (error) {
+    console.error(error);
+    aviso(error.message || "No se pudo generar el PDF.", "error");
+  } finally {
+    btnPdf.disabled = false;
+    btnPdf.textContent = "PDF";
+  }
 });
+
+// ------------------------------------------------------------
+// PDF de un cierre de caja (una página A4, solo admin)
+// ------------------------------------------------------------
+function pdfCierre(c) {
+  const pm = c.totalPorMetodo || {};
+  const cb = c.cobrosCreditos || {};
+  const co = c.creditosOtorgados || {};
+  const eg = c.egresos || {};
+  const dif = Number(c.diferencia) || 0;
+  const pdf = new DocumentoPDF("Cierre de caja");
+
+  pdf.pares([
+    ["Apertura", `${fechaHora(c.fechaApertura)} · ${c.usuarioApertura || "—"}`],
+    ["Cierre", `${fechaHora(c.fechaCierre)} · ${c.usuarioCierre || "—"}${c.rolCierre === "cajero" ? " (cajero, cierre ciego)" : ""}`]
+  ]);
+
+  pdf.tarjetas([
+    { rotulo: "Monto inicial", valor: dinero(c.montoInicial) },
+    { rotulo: "Total vendido", valor: dinero(c.totalVentas), detalle: `${c.numVentas ?? 0} venta(s)` },
+    {
+      rotulo: "Diferencia", valor: dif === 0 ? "Cuadra exacto" : `${dif > 0 ? "Sobrante" : "Faltante"} ${dinero(Math.abs(dif))}`,
+      destacado: true, colorValor: dif < 0 ? COLOR.tomate : dif > 0 ? COLOR.negro : COLOR.verde
+    }
+  ]);
+
+  pdf.seccion("Ventas por método de pago");
+  pdf.tabla({
+    cabecera: ["Método", "Total cobrado", "De ello, cobros de créditos"],
+    filas: METODOS.map((m) => [NOMBRES_METODO[m], dinero(pm[m]), dinero(cb[m])]),
+    pie: ["Total", dinero(c.totalVentas), dinero(cb.total)],
+    alinearDerecha: [1, 2]
+  });
+  pdf.pares([
+    ["Cobros de créditos", `${dinero(cb.total)} · ${cb.cantidad ?? 0} pago(s) (incluidos en el total)`],
+    ["Créditos otorgados", `${co.cantidad ?? 0} crédito(s) · ${dinero(co.monto)} (informativo, no suma)`]
+  ]);
+
+  pdf.seccion("Egresos pagados con efectivo de caja");
+  const detalle = eg.detalle || [];
+  pdf.tabla({
+    cabecera: ["Tipo", "Detalle", "Monto"],
+    filas: detalle.length
+      ? detalle.map((e) => [NOMBRES_EGRESO[e.tipo] || e.tipo || "", e.descripcion || "", dinero(e.monto)])
+      : [["—", "Sin egresos", dinero(0)]],
+    pie: ["", "Total egresos", dinero(eg.total)],
+    alinearDerecha: [2],
+    anchos: { 0: 38, 2: 30 }
+  });
+
+  pdf.seccion("Efectivo");
+  pdf.tabla({
+    cabecera: ["Concepto", "Monto"],
+    filas: [
+      ["Monto inicial", dinero(c.montoInicial)],
+      ["+ Efectivo cobrado (ventas y cobros)", dinero(pm.efectivo)],
+      ["- Egresos en efectivo", dinero(eg.total)],
+      ["Efectivo esperado", dinero(c.efectivoEsperado)],
+      ["Efectivo contado", dinero(c.efectivoContado)]
+    ],
+    pie: ["Diferencia", `${dif > 0 ? "+" : dif < 0 ? "-" : ""}${dinero(Math.abs(dif))}`],
+    alinearDerecha: [1]
+  });
+
+  if (c.observacion) {
+    pdf.seccion("Observación");
+    pdf.parrafo(c.observacion);
+  }
+  pdf.parrafo(`Impreso: ${fechaHora(new Date())}`, { tam: 8.5, color: COLOR.gris });
+
+  pdf.guardar(`ALANA_Cierre_${claveDiaLimaSeguro(c.fechaApertura) || claveDiaLima()}.pdf`);
+}
+
+/** Día de Lima (AAAA-MM-DD) de un Timestamp, para el nombre del archivo. */
+function claveDiaLimaSeguro(ts) {
+  try { return ts ? claveDiaLima(ts) : ""; } catch { return ""; }
+}
 
 // ------------------------------------------------------------
 // Reporte de cierre para ticketera 80 mm

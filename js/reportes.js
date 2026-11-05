@@ -24,8 +24,9 @@ import {
   protegerPagina, soles, redondear, fechaHora, soloFecha, escaparHTML, aviso,
   mensajeError, claveDiaLima, inicioDiaLima, sumarDias, diaSemana,
   calcularTotales, METODOS, NOMBRES_METODO, tieneCosto, itemTieneCosto,
-  costoDeItems, porcentaje, cantidadConUnidad, manejaStock, stockDe
+  costoDeItems, porcentaje, cantidadConUnidad, manejaStock, stockDe, estadoStock
 } from "./comun.js";
+import { cargarJsPDF, DocumentoPDF, periodoEnPalabras, dinero, COLOR } from "./pdf.js";
 
 const CONCEPTOS = { sueldo: "Sueldo", adelanto: "Adelanto", bono: "Bono", otro: "Otro" };
 const METODOS_PAGO = { efectivo: "Efectivo", yape: "Yape", plin: "Plin", transferencia: "Transferencia" };
@@ -66,7 +67,10 @@ let grafico = null;
 
 // Para ahorrar lecturas del plan gratuito, los datos se cargan SOLO al
 // presionar "Generar reporte" (no al abrir la página ni al cambiar filtros).
-protegerPagina(() => {
+let usuario = null;      // quien genera el reporte (sale en el PDF)
+
+protegerPagina((u) => {
+  usuario = u;
   aplicarPeriodo("hoy");   // solo deja elegido "Hoy"; no consulta nada
   tablaDetalle.innerHTML = '<tr><td colspan="8" class="vacio">Elige el periodo y presiona "Generar reporte".</td></tr>';
 }, true);
@@ -735,3 +739,181 @@ btnExcel.addEventListener("click", () => {
 });
 
 document.getElementById("btnImprimir").addEventListener("click", () => window.print());
+
+// ------------------------------------------------------------
+// Descargar PDF (fácil de leer para el cliente)
+// ------------------------------------------------------------
+// Usa los datos del reporte YA generado en pantalla: no vuelve a leer Firestore.
+const btnPdf = document.getElementById("btnPdf");
+const chkPdfDetalle = document.getElementById("pdfDetalle");
+const chkPdfAnuladas = document.getElementById("pdfAnuladas");
+
+chkPdfDetalle.addEventListener("change", () => {
+  chkPdfAnuladas.disabled = !chkPdfDetalle.checked;
+  if (!chkPdfDetalle.checked) chkPdfAnuladas.checked = false;
+});
+
+btnPdf.addEventListener("click", async () => {
+  if (!rango || !totales || !ganancia) {
+    aviso("Primero genera el reporte", "error");
+    return;
+  }
+  btnPdf.disabled = true;
+  btnPdf.textContent = "Preparando PDF…";
+  try {
+    await cargarJsPDF();
+    const pdf = construirPdfReporte({ detalle: chkPdfDetalle.checked, anuladas: chkPdfAnuladas.checked });
+    const nombre = rango.desde === rango.hasta
+      ? `ALANA_Reporte_${rango.desde}.pdf`
+      : `ALANA_Reporte_${rango.desde}_a_${rango.hasta}.pdf`;
+    pdf.guardar(nombre);
+  } catch (error) {
+    console.error(error);
+    aviso(error.message || "No se pudo generar el PDF.", "error");
+  } finally {
+    btnPdf.disabled = false;
+    btnPdf.textContent = "Descargar PDF";
+  }
+});
+
+/** Porcentaje de una parte sobre el total, como texto "12.3 %". */
+const pct = (parte, total) => porcentaje(total > 0 ? (parte / total) * 100 : 0);
+
+/** Arma el PDF con el reporte en pantalla. Devuelve un DocumentoPDF listo para guardar. */
+function construirPdfReporte({ detalle, anuladas }) {
+  const pdf = new DocumentoPDF("Reporte de ventas");
+  const g = ganancia;
+  const t = totales;
+
+  // 2. Datos del reporte
+  pdf.pares([
+    ["Periodo", periodoEnPalabras(rango.desde, rango.hasta)],
+    ["Generado el", fechaHora(new Date())],
+    ["Generado por", usuario?.nombre || "—"]
+  ]);
+
+  // 3. Resumen principal en tarjetas
+  pdf.seccion("Resumen");
+  const rs = t.resumenes;
+  pdf.tarjetas([
+    { rotulo: "Ventas cobradas", valor: dinero(g.ventas) },
+    { rotulo: "Costo de producción", valor: dinero(g.costo), detalle: vendidosSinCosto.size || diasResumenSinCosto.size ? "Incompleto: ver avisos" : "" },
+    { rotulo: "Ganancia bruta", valor: dinero(g.bruta), detalle: `Margen ${porcentaje(g.margen)}` },
+    { rotulo: "Pagos a trabajadores", valor: dinero(g.pagos), detalle: `${pagosTrab.length} pago(s)` },
+    {
+      rotulo: "Ganancia neta", valor: dinero(g.neta), destacado: true,
+      colorValor: g.neta >= 0 ? COLOR.verde : COLOR.tomate, detalle: `Margen neto ${porcentaje(g.margenNeto)}`
+    },
+    {
+      rotulo: "Ventas y ticket promedio", valor: `${t.numVentas + rs.cantidad} venta(s)`,
+      detalle: `Ticket promedio ${soles(ticketPromedio())}${rs.cantidad ? ` · ${rs.cantidad} resumen(es)` : ""}`
+    }
+  ]);
+  pdf.parrafo("Ganancia bruta = ventas cobradas - costo de producción. Ganancia neta = ganancia bruta - pagos a trabajadores.",
+    { tam: 8.5, color: COLOR.gris });
+
+  // 4. Ventas por método de pago
+  pdf.seccion("Ventas por método de pago");
+  pdf.tabla({
+    cabecera: ["Método", "Monto", "% del total"],
+    filas: METODOS.map((m) => [NOMBRES_METODO[m], dinero(t.porMetodo[m]), pct(t.porMetodo[m], t.total)]),
+    pie: ["Total cobrado", dinero(t.total), t.total > 0 ? "100.0 %" : "0.0 %"],
+    alinearDerecha: [1, 2]
+  });
+  pdf.parrafo(`Incluye cobros de créditos por ${soles(t.cobros.total)} (${pct(t.cobros.total, t.total)} del total).`, { tam: 9.5 });
+
+  // 5. Créditos
+  pdf.seccion("Créditos");
+  pdf.pares([
+    ["Cobrado en el periodo", `${soles(t.cobros.total)} · ${t.cobros.cantidad} pago(s) (ya incluido en las ventas)`],
+    ["Pendiente por cobrar hoy", `${soles(pendiente.total)} · ${pendiente.cantidad} crédito(s) (informativo, no suma)`]
+  ]);
+
+  // 6. Gráfico (el mismo de la pantalla)
+  const canvas = document.getElementById("grafico");
+  if (grafico && canvas && canvas.width > 0) {
+    pdf.seccion("Ventas y ganancia por día");
+    pdf.imagenDeCanvas(canvas);
+    pdf.parrafo("Barras: ventas cobradas · Línea: ganancia bruta.", { tam: 8.5, color: COLOR.gris });
+  }
+
+  // 7. Productos más vendidos (top 10 por cantidad)
+  pdf.seccion("Productos más vendidos");
+  const top = [...topProductos].sort((a, b) => b.cantidad - a.cantidad || b.importe - a.importe).slice(0, 10);
+  if (top.length) {
+    pdf.tabla({
+      cabecera: ["#", "Producto", "Cantidad", "Total vendido", "Ganancia"],
+      filas: top.map((p, i) => [String(i + 1), p.nombre + (p.sinCosto ? " (sin costo)" : ""), String(p.cantidad), dinero(p.importe), dinero(p.ganancia)]),
+      alinearDerecha: [2, 3, 4],
+      anchos: { 0: 9 }
+    });
+  } else {
+    pdf.parrafo("Sin productos vendidos en el periodo.", { color: COLOR.gris });
+  }
+
+  // 8. Ventas por día
+  pdf.seccion("Ventas por día");
+  const totDias = porDia.reduce((a, d) => ({ num: a.num + d.num, total: a.total + d.total, ganancia: a.ganancia + d.ganancia }), { num: 0, total: 0, ganancia: 0 });
+  pdf.tabla({
+    cabecera: ["Fecha", "N.º de ventas", "Total vendido", "Ganancia bruta"],
+    filas: porDia.map((d) => {
+      const [a, m, dd] = d.clave.split("-");
+      return [`${NOMBRES_DIA[diaSemana(d.clave)]} ${dd}/${m}/${a}`, String(d.num), dinero(d.total), dinero(d.ganancia)];
+    }),
+    pie: ["Total", String(totDias.num), dinero(totDias.total), dinero(totDias.ganancia)],
+    alinearDerecha: [1, 2, 3]
+  });
+
+  // 9. Información adicional (no se resta de la ganancia)
+  pdf.seccion("Información adicional (no se resta de la ganancia)");
+  const bebidasAlerta = productosCatalogo.filter((p) => manejaStock(p) && estadoStock(p) !== "normal");
+  pdf.pares([
+    ["Compras de insumos", `${soles(g.compras)} · ${compras.length} compra(s)`],
+    ["Compras de bebidas", `${soles(g.comprasBebidas)} · ${comprasBebidas.length} ingreso(s)`],
+    ["Valor actual del stock", `${soles(valorStock.total)} · ${valorStock.productos} producto(s) con stock`],
+    ["Bebidas con stock bajo o agotadas", bebidasAlerta.length
+      ? bebidasAlerta.map((p) => `${p.nombre} (${estadoStock(p) === "agotado" ? "agotado" : `quedan ${stockDe(p)}`})`).join(", ")
+      : "Ninguna"]
+  ]);
+  pdf.parrafo("Las compras no se restan porque su costo ya está incluido en el costo de producción de cada producto.",
+    { tam: 8.5, color: COLOR.gris });
+
+  // 10. Avisos
+  const avisos = [];
+  if (vendidosSinCosto.size) avisos.push(`Se vendieron productos sin costo registrado (${[...vendidosSinCosto].join(", ")}): el costo y la ganancia no son exactos.`);
+  if (diasResumenSinCosto.size) avisos.push(`Hay ${diasResumenSinCosto.size} día(s) con ventas resumidas sin costo; la ganancia de esos días no es exacta.`);
+  if (manualesInfo.total) avisos.push(`${manualesInfo.total} venta(s) del periodo se cargaron manualmente (${manualesInfo.detalladas} detallada(s), ${manualesInfo.resumenes} resumida(s)).`);
+  if (avisos.length) {
+    pdf.seccion("Avisos");
+    avisos.forEach((a) => pdf.parrafo(`• ${a}`, { tam: 9.5 }));
+  }
+
+  // Anexo opcional: detalle de cada venta
+  if (detalle) {
+    const filas = movimientos
+      .filter((m) => anuladas || m.estado !== "Anulada")
+      .slice()
+      .sort((a, b) => (a.fecha?.toMillis?.() || 0) - (b.fecha?.toMillis?.() || 0))
+      .map((m) => [
+        m.esResumen ? soloFecha(m.fecha) : fechaHora(m.fecha),
+        (m.tipo === "Venta" ? m.detalle : `Cobro de crédito: ${m.detalle}`) + (m.estado === "Anulada" ? " [ANULADA]" : ""),
+        m.metodoTexto || "",
+        dinero(m.monto),
+        m.origen
+      ]);
+    pdf.doc.addPage();
+    pdf.y = 32;
+    pdf.seccion(`Anexo: detalle de ventas${anuladas ? " (incluye anuladas)" : ""}`);
+    if (filas.length) {
+      pdf.tabla({
+        cabecera: ["Fecha y hora", "Productos", "Método", "Total", "Origen"],
+        filas,
+        alinearDerecha: [3],
+        anchos: { 0: 34, 2: 30, 3: 24, 4: 18 }
+      });
+    } else {
+      pdf.parrafo("No hay ventas en el periodo.", { color: COLOR.gris });
+    }
+  }
+  return pdf;
+}
