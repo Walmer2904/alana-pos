@@ -24,7 +24,7 @@ import {
   protegerPagina, soles, redondear, fechaHora, soloFecha, escaparHTML, aviso,
   mensajeError, claveDiaLima, inicioDiaLima, sumarDias, diaSemana,
   calcularTotales, METODOS, NOMBRES_METODO, tieneCosto, itemTieneCosto,
-  costoDeItems, porcentaje, cantidadConUnidad
+  costoDeItems, porcentaje, cantidadConUnidad, manejaStock, stockDe
 } from "./comun.js";
 
 const CONCEPTOS = { sueldo: "Sueldo", adelanto: "Adelanto", bono: "Bono", otro: "Otro" };
@@ -48,6 +48,9 @@ let ventas = [];         // ventas del rango SIN las de crédito (incluye anulad
 let cobros = [];         // cobros de créditos del rango (con costoCobro calculado)
 let pagosTrab = [];      // pagos a trabajadores del rango
 let compras = [];        // compras de insumos del rango
+let movsStock = [];      // movimientos de stock de bebidas del rango (ingresos, ventas, anulaciones, ajustes)
+let comprasBebidas = []; // ingresos de bebidas del rango (informativo)
+let valorStock = { total: 0, productos: 0 }; // valor actual del stock de bebidas
 let productosCatalogo = [];
 let totales = null;      // resultado de calcularTotales
 let ganancia = null;     // { ventas, costo, bruta, margen, pagos, neta, compras }
@@ -183,14 +186,17 @@ async function cargar(r) {
   const fin = Timestamp.fromDate(inicioDiaLima(sumarDias(r.hasta, 1)));
 
   try {
-    const [snapVentas, snapCobros, snapPendientes, snapPagos, snapMovs, snapProductos] = await Promise.all([
+    const [snapVentas, snapCobros, snapPendientes, snapPagos, snapMovs, snapProductos, snapStock] = await Promise.all([
       consultaPorFecha("ventas", inicio, fin),
       consultaPorFecha("cobros", inicio, fin),
       getDocs(query(collection(db, "creditos"), where("estado", "==", "pendiente"))),
       consultaPorFecha("pagosTrabajadores", inicio, fin),
       consultaPorFecha("movimientosInsumos", inicio, fin),
-      getDocs(collection(db, "productos"))
+      getDocs(collection(db, "productos")),
+      consultaPorFecha("movimientosStock", inicio, fin)
     ]);
+    movsStock = snapStock.docs.map((d) => ({ id: d.id, ...d.data() }));
+    comprasBebidas = movsStock.filter((m) => m.tipo === "ingreso");
     // Las ventas al crédito NO cuentan en su fecha: se excluyen aquí.
     ventas = snapVentas.docs
       .map((d) => ({ id: d.id, ...d.data() }))
@@ -203,6 +209,12 @@ async function cargar(r) {
     pagosTrab = snapPagos.docs.map((d) => ({ id: d.id, ...d.data() }));
     compras = snapMovs.docs.map((d) => ({ id: d.id, ...d.data() })).filter((m) => m.tipo === "compra");
     productosCatalogo = snapProductos.docs.map((d) => d.data());
+    // Valor actual (hoy) del stock de bebidas: stock × costo unitario
+    const conStock = productosCatalogo.filter(manejaStock);
+    valorStock = {
+      total: redondear(conStock.reduce((s, p) => s + stockDe(p) * (tieneCosto(p) ? p.costo : 0), 0)),
+      productos: conStock.length
+    };
 
     await completarCostoDeCobros();
     procesar();
@@ -298,7 +310,9 @@ function procesar() {
     pagos: totalPagos,
     neta,
     margenNeto: totales.total > 0 ? (neta / totales.total) * 100 : 0,
-    compras: totalCompras
+    compras: totalCompras,
+    // Compras de bebidas: informativo, NO se resta (su costo ya está en el costo de producción)
+    comprasBebidas: redondear(comprasBebidas.reduce((s, m) => s + (Number(m.costoTotal) || 0), 0))
   };
   dibujarGanancia();
   dibujarBanner();
@@ -438,7 +452,7 @@ function procesar() {
         </tr>`).join("")
     : '<tr><td colspan="8" class="vacio">No hay ventas ni cobros en este periodo.</td></tr>';
 
-  btnExcel.disabled = movimientos.length === 0 && pagosTrab.length === 0 && compras.length === 0;
+  btnExcel.disabled = movimientos.length === 0 && pagosTrab.length === 0 && compras.length === 0 && movsStock.length === 0;
 }
 
 /** Ticket promedio sin las ventas resumidas (no se sabe cuántas ventas tuvo ese día). */
@@ -465,6 +479,10 @@ function dibujarGanancia() {
   document.getElementById("gNetaMargen").textContent = `Margen neto ${porcentaje(g.margenNeto)}`;
   document.getElementById("gCompras").textContent = soles(g.compras);
   document.getElementById("gComprasDetalle").textContent = `${compras.length} compra(s) · informativo, no se resta`;
+  document.getElementById("gComprasBebidas").textContent = soles(g.comprasBebidas);
+  document.getElementById("gComprasBebidasDetalle").textContent = `${comprasBebidas.length} ingreso(s) · informativo, no se resta`;
+  document.getElementById("gValorStock").textContent = soles(valorStock.total);
+  document.getElementById("gValorStockDetalle").textContent = `${valorStock.productos} producto(s) con stock · stock × costo`;
 }
 
 function dibujarBanner() {
@@ -599,6 +617,8 @@ btnExcel.addEventListener("click", () => {
     ["Ganancia neta (S/)", g.neta],
     ["Margen neto (%)", redondear(g.margenNeto)],
     ["Compras de insumos (S/) - informativo, NO se resta", g.compras],
+    ["Compras de bebidas (S/) - informativo, NO se resta", g.comprasBebidas],
+    ["Valor actual del stock de bebidas (S/) - al generar el reporte", valorStock.total],
     vendidosSinCosto.size ? ["AVISO: productos vendidos sin costo (ganancia inexacta)", [...vendidosSinCosto].join(", ")] : [],
     diasResumenSinCosto.size ? ["AVISO: días con ventas resumidas sin costo (ganancia inexacta)", [...diasResumenSinCosto].sort().join(", ")] : [],
     [],
@@ -682,6 +702,23 @@ btnExcel.addEventListener("click", () => {
     "Registró": m.usuarioNombre || ""
   }));
   XLSX.utils.book_append_sheet(libro, XLSX.utils.json_to_sheet(filasCompras.length ? filasCompras : [{ "Sin datos": "" }]), "Compras de insumos");
+
+  // Hoja: Movimientos de stock de bebidas (ingresos, ventas, anulaciones, ajustes)
+  const TIPOS_STOCK = { ingreso: "Ingreso", venta: "Venta", anulacion: "Anulación", ajuste: "Ajuste" };
+  const filasStock = movsStock.map((m) => ({
+    "Fecha y hora": fechaHora(m.fecha),
+    "Producto": m.nombreProducto,
+    "Tipo": TIPOS_STOCK[m.tipo] || m.tipo,
+    "Cantidad": Number(m.cantidad) || 0,
+    "Stock antes": m.stockAntes,
+    "Stock después": m.stockDespues,
+    "Costo total (S/)": Number(m.costoTotal) || 0,
+    "De caja": m.pagadoConCaja ? "Sí" : "No",
+    "Motivo": m.motivo || "",
+    "Venta": m.ventaId ? String(m.ventaId).slice(-6).toUpperCase() : "",
+    "Usuario": m.usuarioNombre || ""
+  }));
+  XLSX.utils.book_append_sheet(libro, XLSX.utils.json_to_sheet(filasStock.length ? filasStock : [{ "Sin datos": "" }]), "Movimientos de stock");
 
   // Hoja 6: Productos vendidos
   const filasProductos = [...topProductos].sort((a, b) => b.cantidad - a.cantidad).map((p) => ({

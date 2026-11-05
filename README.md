@@ -18,7 +18,7 @@ Publicado en: https://walmer2904.github.io/alana-pos/
 | `creditos.html` | Todos | Créditos pendientes en tiempo real, búsqueda por DNI/nombre, registrar pagos y abonos, comprobante, historial de pagados/anulados |
 | `caja.html` | Todos | Apertura y cierre de caja (una sola caja abierta para todas las PCs). El cajero hace **cierre ciego**; el admin ve montos, egresos e historial |
 | `productos.html` | Admin | Productos con foto, precio, **costo de producción** y ganancia por unidad |
-| `insumos.html` | Admin | Inventario de insumos: stock, compras (costo promedio), salidas/ajustes, eliminar, historial por insumo e historial general, stock bajo |
+| `insumos.html` | Admin | **Inventario** con dos pestañas: *Insumos* (stock, compras con costo promedio, salidas/ajustes, eliminar, historiales) y *Bebidas y productos con stock* (ingresos, ajustes, historial, valor del stock) |
 | `trabajadores.html` | Admin | Trabajadores, pagos (sueldo, adelanto, bono), historial y comprobante con firma |
 | `ventas-anteriores.html` | Admin | Ventas de fechas pasadas: **detallada** (productos, con fecha y hora) o **resumida del día** (montos por método); lista para editar o anular |
 | `reportes.html` | Admin | Ventas cobradas, costo, ganancia bruta y neta, pagos a trabajadores, compras de insumos, productos más vendidos, gráfico, Excel |
@@ -40,7 +40,9 @@ La interfaz oculta lo que el cajero no puede hacer, y las **reglas de Firestore*
 | Cambiar precios al vender o aplicar descuentos | ✘ (en Ventas) / ✔ (en Ventas anteriores) | ✘ |
 | Registrar ventas con fecha pasada o manuales (Ventas anteriores) | ✔ | ✘ |
 | Productos: crear, editar, desactivar, eliminar | ✔ | ✘ (solo los ve en Ventas) |
-| Insumos, Trabajadores y Reportes | ✔ | ✘ |
+| Inventario (insumos y bebidas), Trabajadores y Reportes | ✔ | ✘ |
+| Descontar stock de bebidas al vender | ✔ | ✔ (solo bajar, nunca negativo) |
+| Subir stock (ingresos, ajustes, devolver al anular) | ✔ | ✘ |
 | Ver costos de producción, ganancias o márgenes en pantalla | ✔ | ✘ |
 | Eliminar ventas, créditos, clientes, cobros, egresos o movimientos | ✘ | ✘ |
 
@@ -69,7 +71,8 @@ alana-pos/
 │                          validación de DNI, costos, egresos
 ├── js/login.js            Inicio de sesión
 ├── js/ventas.js, js/creditos.js, js/caja.js, js/productos.js,
-│   js/insumos.js, js/trabajadores.js, js/ventas-anteriores.js, js/reportes.js
+│   js/insumos.js, js/stock.js (pestaña de bebidas del Inventario), js/trabajadores.js,
+│   js/ventas-anteriores.js, js/reportes.js
 └── firestore.rules        Reglas de seguridad (copiar a la consola de Firebase)
 ```
 
@@ -102,6 +105,27 @@ contador "5/8". Las reglas de Firestore también lo exigen. En Créditos, el adm
 - Un insumo se puede **desactivar** (se oculta y se puede reactivar) o **eliminar** (se borra para siempre). Al eliminarlo
   se conservan sus movimientos (guardan `nombreInsumo`): siguen en Reportes y en el "Historial general" con la etiqueta "(eliminado)".
 
+## Stock de bebidas y productos comprados hechos
+
+- En Productos, el interruptor **"Controlar stock"** (`manejaStock`) está apagado por defecto: los platos preparados no llevan
+  stock. Al activarlo se piden stock inicial, stock mínimo y unidad (unidad, botella, lata, paquete). La categoría "Bebidas"
+  siempre aparece en la lista y, al elegirla, se sugiere activar el control de stock (sin obligar).
+- Una vez activado, el stock ya no se edita en Productos: cambia solo con ventas, anulaciones, ingresos y ajustes, y todo queda en
+  `movimientosStock`.
+- **Al vender** (también al crédito), la misma transacción de la venta lee el stock real de cada bebida, verifica que alcance
+  (por si la otra PC vendió al mismo tiempo) y lo descuenta. Si no alcanza, la venta se cancela con
+  "Solo quedan X de [producto]; ajusta el pedido". En la venta se ve "Quedan X" o "Agotado" (sin costos para el cajero).
+  Cada item con stock guarda `manejaStock: true`.
+- **Al anular** una venta (en Ventas, Créditos o Ventas anteriores) se devuelven las unidades en la misma transacción.
+- **Ventas anteriores:** casilla "Descontar del stock actual", apagada por defecto (las ventas antiguas no afectan el stock de hoy).
+  Las ventas manuales que descontaron stock no se editan: se anulan y se registran de nuevo.
+- **Inventario > Bebidas y productos con stock:** registrar ingreso (suma stock y actualiza el costo de producción con promedio
+  ponderado; si se paga con efectivo de caja, crea un egreso `tipo: "producto"` que Caja resta del efectivo esperado) y ajuste
+  (+ o −, motivo obligatorio, sin dejar el stock negativo). Historial por producto con filtro de fechas.
+- El admin ve en Ventas un aviso discreto cuando hay bebidas con stock bajo o agotadas.
+- Reportes muestra las **compras de bebidas** del periodo (informativo, no se resta de la ganancia) y el **valor actual del stock**;
+  el Excel trae la hoja "Movimientos de stock".
+
 ## Ventas anteriores (solo admin)
 
 - **Detallada:** como el punto de venta, con fecha y hora obligatorias (no futuras) y precio editable por línea. Se guarda en
@@ -127,7 +151,8 @@ contador "5/8". Las reglas de Firestore también lo exigen. En Créditos, el adm
 ## Datos en Firestore
 
 - `usuarios/{uid}`: `{ nombre, rol: "admin" | "cajero" }`. Se crean a mano desde la consola.
-- `productos`: `{ nombre, precio, costo, categoria, imagen (base64 JPEG ≤ ~200 KB), activo, creadoEn }`
+- `productos`: `{ nombre, precio, costo, categoria, imagen (base64 JPEG ~25 KB), activo, creadoEn, manejaStock, stock, stockMinimo, unidadStock, actualizadoEn }` (los campos de stock solo si controla stock)
+- `movimientosStock`: `{ productoId, nombreProducto, tipo ("ingreso"|"venta"|"anulacion"|"ajuste"), cantidad (+/−), stockAntes, stockDespues, costoTotal, motivo, ventaId, pagadoConCaja, fecha, usuarioNombre, cierreId }`
 - `ventas`: `{ fecha, items[{productoId, nombre, precio, cantidad, subtotal, costoUnitario, costoSubtotal}], total, metodoPago ("efectivo"|"yape"|"plin"|"tarjeta"|"credito"), montoRecibido, vuelto, usuarioId, usuarioNombre, cierreId, anulada }`. Las de crédito además llevan `dni`, `nombreCliente` y `creditoId`.
   Las manuales llevan `registroManual: true, registradoEn, registradoPor, cierreId: null` (y `editadoEn, editadoPor` si se corrigieron).
   Las resumidas: `{ tipo: "resumen", fecha, totalPorMetodo {efectivo, yape, plin, tarjeta}, total, costoTotal (o null), items: [], observacion, registroManual: true, ... }`.
@@ -138,11 +163,11 @@ contador "5/8". Las reglas de Firestore también lo exigen. En Créditos, el adm
 - `movimientosInsumos`: `{ insumoId, nombreInsumo, tipo ("compra"|"salida"|"ajuste"), cantidad, costoTotal, motivo, stockAnterior, stockNuevo, pagadoConCaja, fecha, usuarioNombre, cierreId }`
 - `trabajadores`: `{ nombre, dni, cargo, tipoPago, montoAcordado, activo, fechaIngreso }`
 - `pagosTrabajadores`: `{ trabajadorId, nombreTrabajador, monto, concepto, periodo, metodo, fecha, observacion, usuarioNombre, cierreId, pagadoConCaja }`
-- `egresos`: `{ tipo ("insumo"|"trabajador"), descripcion, monto, metodo: "efectivo", fecha, cierreId, referenciaId, usuarioNombre }`
-- `cierres`: `{ estado, fechaApertura, fechaCierre, montoInicial, totalVentas, totalPorMetodo, efectivoEsperado, efectivoContado, diferencia, numVentas, creditosOtorgados {cantidad, monto}, cobrosCreditos {total, cantidad, efectivo, yape, plin, tarjeta}, egresos {total, cantidad, insumos, trabajadores, detalle[]}, usuarioApertura, usuarioCierre, rolCierre ("admin"|"cajero"), observacion }`
+- `egresos`: `{ tipo ("insumo"|"trabajador"|"producto"), descripcion, monto, metodo: "efectivo", fecha, cierreId, referenciaId, usuarioNombre }`
+- `cierres`: `{ estado, fechaApertura, fechaCierre, montoInicial, totalVentas, totalPorMetodo, efectivoEsperado, efectivoContado, diferencia, numVentas, creditosOtorgados {cantidad, monto}, cobrosCreditos {total, cantidad, efectivo, yape, plin, tarjeta}, egresos {total, cantidad, insumos, trabajadores, productos, detalle[]}, usuarioApertura, usuarioCierre, rolCierre ("admin"|"cajero"), observacion }`
 - `config/cajaActual`: `{ cierreId }`, el id de la caja abierta (o `null`). Se cambia con transacciones para que nunca haya dos cajas abiertas.
 
-Ninguna consulta necesita índices compuestos: todas filtran por un solo campo (`fecha`, `cierreId`, `estado`, `dni`, `insumoId` o `trabajadorId`) y el resto se ordena o filtra en el navegador.
+Ninguna consulta necesita índices compuestos: todas filtran por un solo campo (`fecha`, `cierreId`, `estado`, `dni`, `insumoId`, `productoId`, `manejaStock` o `trabajadorId`) y el resto se ordena o filtra en el navegador.
 
 ## Crear un usuario nuevo (cajero)
 
