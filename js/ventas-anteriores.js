@@ -20,8 +20,8 @@ import {
 import {
   protegerPagina, soles, redondear, fechaHora, soloFecha, escaparHTML, aviso,
   confirmar, mensajeError, claveDiaLima, inicioDiaLima, sumarDias, NOMBRES_METODO,
-  METODOS, dniValido, errorDni, prepararCampoDni, anularVentaCredito, mensajeAnulacion,
-  tieneCosto
+  METODOS, dniValido, errorDni, prepararCampoDni, anularVenta, mensajeAnulacion,
+  tieneCosto, manejaStock, leerStockEnTx, descontarStockEnTx, mensajeSinStock
 } from "./comun.js";
 
 const MS_MINUTO = 60 * 1000;
@@ -49,6 +49,8 @@ const inDni = document.getElementById("dniCliente");
 const inNombreCliente = document.getElementById("nombreCliente");
 const infoCliente = document.getElementById("infoCliente");
 const errorDetallada = document.getElementById("errorDetallada");
+const chkDescontar = document.getElementById("descontarStock");
+const zonaDescontar = document.getElementById("zonaDescontar");
 const btnGuardarDetallada = document.getElementById("btnGuardarDetallada");
 
 // Modo B
@@ -224,6 +226,7 @@ catalogo.addEventListener("click", (e) => {
     nombre: p.nombre,
     precio: Number(p.precio) || 0,
     costo: tieneCosto(p) ? p.costo : null,   // copia del costo (null = sin costo)
+    manejaStock: manejaStock(p),
     cantidad: 1
   });
   dibujarPedido();
@@ -352,6 +355,8 @@ function limpiarDetallada() {
   infoCliente.classList.add("oculto");
   dniConsultado = "";
   errorDetallada.classList.add("oculto");
+  chkDescontar.checked = false;            // por defecto NO descuenta stock
+  zonaDescontar.classList.remove("oculto");
   elegirMetodo("efectivo");
 }
 
@@ -388,6 +393,9 @@ formDetallada.addEventListener("submit", async (e) => {
     if (nombreCliente.length < 3) return errorA("Escribe el nombre completo del cliente.", inNombreCliente);
   }
 
+  // Solo si se marcó "Descontar del stock actual" los items con stock llevan
+  // manejaStock: true (así se descuentan ahora y se devuelven si se anula).
+  const descontar = !editando && chkDescontar.checked;
   const items = [...pedido.values()].map((it) => ({
     productoId: it.productoId,
     nombre: it.nombre,
@@ -395,7 +403,8 @@ formDetallada.addEventListener("submit", async (e) => {
     cantidad: it.cantidad,
     subtotal: redondear(it.precio * it.cantidad),
     costoUnitario: it.costo,
-    costoSubtotal: it.costo === null ? null : redondear(it.costo * it.cantidad)
+    costoSubtotal: it.costo === null ? null : redondear(it.costo * it.cantidad),
+    ...(descontar && it.manejaStock ? { manejaStock: true } : {})
   }));
   const total = redondear(items.reduce((s, it) => s + it.subtotal, 0));
   const fechaTs = Timestamp.fromDate(fecha);
@@ -433,9 +442,11 @@ formDetallada.addEventListener("submit", async (e) => {
         venta.nombreCliente = nombreCliente;
         venta.creditoId = creditoRef.id;
       }
-      // Venta + crédito + cliente juntos (o nada)
+      // Venta + crédito + cliente (+ descuento de stock si se pidió) juntos o nada
       await runTransaction(db, async (tx) => {
+        const lecturasStock = descontar ? await leerStockEnTx(tx, items) : [];
         tx.set(ventaRef, venta);
+        descontarStockEnTx(tx, lecturasStock, { ventaId: ventaRef.id, usuarioNombre: usuario.nombre, cierreId: null });
         if (esCredito) {
           tx.set(creditoRef, {
             ventaId: ventaRef.id,
@@ -460,6 +471,7 @@ formDetallada.addEventListener("submit", async (e) => {
     limpiarDetallada();
     if (listaCargada) cargarLista();
   } catch (error) {
+    if (error.message === "SIN_STOCK") { errorA(mensajeSinStock(error)); return; }
     console.error(error);
     errorA(mensajeError(error));
   } finally {
@@ -638,6 +650,11 @@ function textoDetalle(v) {
   return v.metodoPago === "credito" ? `${detalle}<br><small>${escaparHTML(v.nombreCliente || "")} · DNI ${escaparHTML(v.dni || "")}</small>` : detalle;
 }
 
+/** ¿La venta descontó stock? Esas no se editan (se anulan y se registran de nuevo). */
+function descontoStock(v) {
+  return (v.items || []).some((it) => it.manejaStock === true);
+}
+
 function dibujarLista() {
   if (manuales.length === 0) {
     tablaManuales.innerHTML = '<tr><td colspan="9" class="vacio">No hay ventas manuales en ese rango.</td></tr>';
@@ -656,7 +673,7 @@ function dibujarLista() {
       <td>
         <div class="acciones-fila">
           ${v.anulada ? "" : `
-            ${v.metodoPago === "credito" ? "" : `<button class="btn btn-claro btn-chico" data-editar="${v.id}">Editar</button>`}
+            ${v.metodoPago === "credito" || descontoStock(v) ? "" : `<button class="btn btn-claro btn-chico" data-editar="${v.id}">Editar</button>`}
             <button class="btn btn-peligro btn-chico" data-anular="${v.id}">Anular</button>`}
         </div>
       </td>
@@ -669,7 +686,7 @@ tablaManuales.addEventListener("click", async (e) => {
   const id = btnEditar?.dataset.editar || btnAnular?.dataset.anular;
   const v = manuales.find((x) => x.id === id);
   if (!v || v.registroManual !== true) return;   // nunca ventas normales desde aquí
-  if (btnEditar) empezarEdicion(v);
+  if (btnEditar && !descontoStock(v)) empezarEdicion(v);
   if (btnAnular) anular(v);
 });
 
@@ -703,6 +720,7 @@ function empezarEdicion(v) {
     dibujarPedido();
     elegirMetodo(v.metodoPago);
     btnMetodoCredito.classList.add("oculto");   // una venta registrada no pasa a crédito
+    zonaDescontar.classList.add("oculto");      // editar nunca mueve el stock
     btnGuardarDetallada.textContent = "Guardar cambios";
     mostrarAvisoEdicion(`Editando la venta manual del ${fechaHora(v.fecha)} (${soles(v.total)}).`);
   }
@@ -712,18 +730,13 @@ async function anular(v) {
   const esCredito = v.metodoPago === "credito";
   const ok = await confirmar(
     `¿Anular esta venta manual de ${soles(v.total)} (${soloFecha(v.fecha)})? No se borra, pero deja de contar en reportes` +
-    `${esCredito ? " y su crédito se anula" : ""}.`,
+    `${esCredito ? " y su crédito se anula" : ""}${descontoStock(v) ? "; las unidades vuelven al stock" : ""}.`,
     "Anular venta", true
   );
   if (!ok) return;
   try {
-    if (esCredito && v.creditoId) {
-      await anularVentaCredito(v.id, v.creditoId, usuario.nombre);
-    } else {
-      await updateDoc(doc(db, "ventas", v.id), {
-        anulada: true, anuladaPor: usuario.nombre, anuladaEn: serverTimestamp()
-      });
-    }
+    // Anula la venta (y su crédito) y devuelve el stock si lo había descontado
+    await anularVenta(v.id, usuario.nombre);
     if (editando?.id === v.id) { terminarEdicion(); limpiarDetallada(); limpiarResumen(); }
     aviso("Venta manual anulada.");
     cargarLista();

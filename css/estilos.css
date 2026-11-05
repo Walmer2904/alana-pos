@@ -634,6 +634,17 @@ dialog.modal-ancho { width: min(900px, calc(100vw - 2rem)); }
 .precio-linea { display: flex; align-items: center; gap: .35rem; font-size: .9rem; color: var(--gris); }
 .precio-linea input { width: 6.5rem; padding: .3em .5em; min-height: 36px; }
 
+/* ---------- 21. Stock de bebidas y productos comprados hechos ---------- */
+.producto-stock {
+  position: absolute; top: .45rem; left: .45rem; z-index: 1;
+  background: #fff; color: var(--negro); border: 2px solid var(--negro); border-radius: 999px;
+  font-size: .8rem; font-weight: 800; padding: .1em .55em;
+}
+.producto-stock.bajo { background: var(--amarillo); }
+.producto-stock.agotado { background: var(--rojo); color: #fff; }
+.producto-btn.agotado { opacity: .55; cursor: not-allowed; filter: grayscale(.6); }
+.producto-btn.agotado:hover, .producto-btn.agotado:active { transform: none; box-shadow: var(--sombra-sticker); }
+
 /* ---------- 19. Elementos según el rol ---------- */
 /* body.rol-cajero lo pone protegerPagina(). Además de ocultar, el JS
    no escribe en pantalla los datos de admin cuando el usuario es cajero. */

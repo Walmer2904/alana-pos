@@ -17,8 +17,8 @@ import {
   protegerPagina, soles, redondear, soloHora, fechaHora, escaparHTML, aviso,
   confirmar, mensajeError, abrirModal, cerrarModal, imprimirTicket,
   escucharCaja, escucharVentasDeCaja, refCajaActual, NOMBRES_METODO,
-  encabezadoTicket, dniValido, errorDni, prepararCampoDni, anularVentaCredito, mensajeAnulacion,
-  tieneCosto
+  encabezadoTicket, dniValido, errorDni, prepararCampoDni, anularVenta, mensajeAnulacion,
+  tieneCosto, manejaStock, stockDe, estadoStock, leerStockEnTx, descontarStockEnTx, mensajeSinStock
 } from "./comun.js";
 
 const MAX_VENTAS_LISTA = 30; // cuántas ventas del turno mostrar
@@ -95,6 +95,7 @@ function alCambiarCaja(cierre) {
 // Catálogo de productos (tiempo real)
 // ------------------------------------------------------------
 function escucharProductos() {
+  // Tiempo real: el stock de las bebidas se actualiza solo en las 2 PCs
   onSnapshot(collection(db, "productos"), (snap) => {
     productos = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
@@ -102,6 +103,8 @@ function escucharProductos() {
       .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", "es"));
     dibujarFiltros();
     dibujarCatalogo();
+    dibujarPedido();          // por si el stock bajó desde la otra PC
+    dibujarAvisoStock();
   }, (error) => {
     console.error(error);
     aviso(mensajeError(error), "error");
@@ -142,16 +145,26 @@ function dibujarCatalogo() {
     return;
   }
 
-  catalogo.innerHTML = lista.map((p) => `
-    <button type="button" class="producto-btn" data-id="${p.id}" aria-label="Agregar ${escaparHTML(p.nombre)}, ${soles(p.precio)}">
+  catalogo.innerHTML = lista.map((p) => {
+    // Productos con stock: "Quedan X" o "Agotado" (sin costos ni valores)
+    const conStock = manejaStock(p);
+    const agotado = conStock && stockDe(p) <= 0;
+    const insignia = !conStock ? ""
+      : agotado ? '<span class="producto-stock agotado">Agotado</span>'
+      : `<span class="producto-stock ${estadoStock(p) === "bajo" ? "bajo" : ""}">Quedan ${stockDe(p)}</span>`;
+    return `
+    <button type="button" class="producto-btn ${agotado ? "agotado" : ""}" data-id="${p.id}" ${agotado ? "disabled" : ""}
+      aria-label="${agotado ? `${escaparHTML(p.nombre)}, agotado` : `Agregar ${escaparHTML(p.nombre)}, ${soles(p.precio)}${conStock ? `, quedan ${stockDe(p)}` : ""}`}">
       ${p.imagen
         ? `<img class="producto-foto" src="${p.imagen}" alt="" loading="lazy">`
         : `<div class="producto-foto-vacia" aria-hidden="true">${escaparHTML((p.nombre || "?").charAt(0).toUpperCase())}</div>`}
+      ${insignia}
       <div class="producto-info">
         <div class="producto-nombre">${escaparHTML(p.nombre)}</div>
         <div class="producto-precio">${soles(p.precio)}</div>
       </div>
-    </button>`).join("");
+    </button>`;
+  }).join("");
 }
 
 catalogo.addEventListener("click", (e) => {
@@ -161,11 +174,38 @@ catalogo.addEventListener("click", (e) => {
   if (p) agregarAlPedido(p);
 });
 
+/** Aviso discreto SOLO para el admin: bebidas con stock bajo o agotadas. */
+function dibujarAvisoStock() {
+  const elAviso = document.getElementById("avisoStock");
+  if (!elAviso) return;
+  if (usuario?.rol !== "admin") { elAviso.classList.add("oculto"); return; }
+  const conStock = productos.filter(manejaStock);
+  const agotados = conStock.filter((p) => estadoStock(p) === "agotado").length;
+  const bajos = conStock.filter((p) => estadoStock(p) === "bajo").length;
+  elAviso.classList.toggle("oculto", agotados + bajos === 0);
+  const partes = [];
+  if (agotados) partes.push(`${agotados} agotado(s)`);
+  if (bajos) partes.push(`${bajos} con stock bajo`);
+  document.getElementById("textoAvisoStock").textContent = `Bebidas / productos con stock: ${partes.join(" y ")}.`;
+}
+
+/** Stock disponible de un producto del catálogo (Infinity si no controla stock). */
+function disponible(productoId) {
+  const p = productos.find((x) => x.id === productoId);
+  return p && manejaStock(p) ? stockDe(p) : Infinity;
+}
+
 // ------------------------------------------------------------
 // Pedido
 // ------------------------------------------------------------
 function agregarAlPedido(p) {
   const item = pedido.get(p.id);
+  const actual = item ? item.cantidad : 0;
+  // No permitir más unidades de las disponibles
+  if (manejaStock(p) && actual + 1 > stockDe(p)) {
+    aviso(stockDe(p) <= 0 ? `${p.nombre} está agotado.` : `Solo quedan ${stockDe(p)} de ${p.nombre}.`, "error");
+    return;
+  }
   if (item) {
     item.cantidad++;
   } else {
@@ -176,10 +216,21 @@ function agregarAlPedido(p) {
       nombre: p.nombre,
       precio: Number(p.precio),
       costo: tieneCosto(p) ? p.costo : null,
+      manejaStock: manejaStock(p),
       cantidad: 1
     });
   }
   dibujarPedido();
+}
+
+/** ¿Algún item del pedido pide más de lo que hay? Devuelve el mensaje o "". */
+function problemaDeStock() {
+  for (const it of pedido.values()) {
+    if (!it.manejaStock) continue;
+    const hay = disponible(it.productoId);
+    if (it.cantidad > hay) return `Solo quedan ${hay === Infinity ? 0 : hay} de ${it.nombre}; ajusta el pedido.`;
+  }
+  return "";
 }
 
 function totalDelPedido() {
@@ -192,11 +243,16 @@ function dibujarPedido() {
   if (pedido.size === 0) {
     pedidoItems.innerHTML = '<li class="vacio">Toca un producto para agregarlo.</li>';
   } else {
-    pedidoItems.innerHTML = [...pedido.values()].map((it) => `
+    pedidoItems.innerHTML = [...pedido.values()].map((it) => {
+      const hay = it.manejaStock ? disponible(it.productoId) : Infinity;
+      const falta = it.cantidad > hay
+        ? `<div class="texto-perdida"><small>Solo quedan ${hay === Infinity ? 0 : hay}</small></div>` : "";
+      return `
       <li class="pedido-item">
         <div>
           <div class="pedido-item-nombre">${escaparHTML(it.nombre)}</div>
           <div class="texto-gris">${soles(it.precio)} c/u</div>
+          ${falta}
         </div>
         <div class="pedido-item-sub">${soles(it.precio * it.cantidad)}</div>
         <div class="cantidad">
@@ -207,7 +263,8 @@ function dibujarPedido() {
         <div class="texto-derecha">
           <button type="button" class="btn btn-peligro btn-chico" data-accion="quitar" data-id="${it.productoId}">Quitar</button>
         </div>
-      </li>`).join("");
+      </li>`;
+    }).join("");
   }
   totalPedido.textContent = soles(totalDelPedido());
   actualizarBotones();
@@ -218,7 +275,14 @@ pedidoItems.addEventListener("click", (e) => {
   if (!btn) return;
   const item = pedido.get(btn.dataset.id);
   if (!item) return;
-  if (btn.dataset.accion === "sumar") item.cantidad++;
+  if (btn.dataset.accion === "sumar") {
+    const hay = item.manejaStock ? disponible(item.productoId) : Infinity;
+    if (item.cantidad + 1 > hay) {
+      aviso(`Solo quedan ${hay === Infinity ? 0 : hay} de ${item.nombre}.`, "error");
+      return;
+    }
+    item.cantidad++;
+  }
   if (btn.dataset.accion === "restar") item.cantidad--;
   if (btn.dataset.accion === "quitar" || item.cantidad <= 0) pedido.delete(item.productoId);
   dibujarPedido();
@@ -247,6 +311,8 @@ btnCobrar.addEventListener("click", () => {
     return;
   }
   if (pedido.size === 0) return;
+  const problema = problemaDeStock();
+  if (problema) { aviso(problema, "error"); return; }
   const total = totalDelPedido();
   cobroTotal.textContent = soles(total);
   inRecibido.value = "";
@@ -419,7 +485,9 @@ formCobro.addEventListener("submit", async (e) => {
     subtotal: redondear(it.precio * it.cantidad),
     // Copia del costo de producción (null = el producto no tenía costo)
     costoUnitario: it.costo,
-    costoSubtotal: it.costo === null ? null : redondear(it.costo * it.cantidad)
+    costoSubtotal: it.costo === null ? null : redondear(it.costo * it.cantidad),
+    // Solo en productos con stock: indica qué devolver si se anula la venta
+    ...(it.manejaStock ? { manejaStock: true } : {})
   }));
 
   const ventaRef = doc(collection(db, "ventas"));
@@ -449,10 +517,16 @@ formCobro.addEventListener("submit", async (e) => {
   try {
     // Transacción: confirma que la caja sigue abierta en el servidor
     // (por si la otra PC la cerró hace un momento) y guarda todo junto.
+    // También lee el stock REAL de las bebidas y lo descuenta: si la otra PC
+    // vendió la última unidad al mismo tiempo, aquí se detecta y no se vende.
     await runTransaction(db, async (tx) => {
       const cfg = await tx.get(refCajaActual());
       if (!cfg.exists() || cfg.data().cierreId !== venta.cierreId) throw new Error("SIN_CAJA");
+      const lecturasStock = await leerStockEnTx(tx, items);   // lanza SIN_STOCK si no alcanza
       tx.set(ventaRef, venta);
+      descontarStockEnTx(tx, lecturasStock, {
+        ventaId: ventaRef.id, usuarioNombre: usuario.nombre, cierreId: venta.cierreId
+      });
 
       if (esCredito) {
         tx.set(creditoRef, {
@@ -485,6 +559,8 @@ formCobro.addEventListener("submit", async (e) => {
   } catch (error) {
     if (error.message === "SIN_CAJA") {
       mostrarErrorCobro("La caja fue cerrada. Abre una caja nueva para continuar.");
+    } else if (error.message === "SIN_STOCK") {
+      mostrarErrorCobro(mensajeSinStock(error));
     } else {
       console.error(error);
       mostrarErrorCobro(mensajeError(error));
@@ -589,17 +665,9 @@ tablaTurno.addEventListener("click", async (e) => {
     );
     if (!ok) return;
     try {
-      if (esCredito && v.creditoId) {
-        await anularVentaCredito(v.id, v.creditoId, usuario.nombre);
-        aviso("Venta al crédito anulada.");
-      } else {
-        await updateDoc(doc(db, "ventas", v.id), {
-          anulada: true,
-          anuladaPor: usuario.nombre,
-          anuladaEn: serverTimestamp()
-        });
-        aviso("Venta anulada.");
-      }
+      // Una sola transacción: anula la venta (y su crédito) y devuelve el stock
+      await anularVenta(v.id, usuario.nombre);
+      aviso(esCredito ? "Venta al crédito anulada." : "Venta anulada.");
     } catch (error) {
       console.error(error);
       aviso(mensajeAnulacion(error), "error");
